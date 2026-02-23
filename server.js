@@ -20,6 +20,19 @@ const db = mysql.createPool({
 app.get('/', (req, res) => {
     res.send('RV Backend API is Running!');
 });
+// Register API
+app.post('/api/register', (req, res) => {
+    const { fullName, email, phone, nic, address, companyName, password } = req.body;
+    const id = 'user_' + Date.now(); // සරල ID එකක්
+
+    const query = `INSERT INTO users (id, fullName, email, phone, nic, address, companyName, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client')`;
+    
+    db.query(query, [id, fullName, email, phone, nic, address, companyName, password], (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        res.json({ success: true, message: 'User registered successfully!' });
+    });
+});
+
 
 // Login API එක (මේක ඔයාගේ AuthContext එකෙන් පස්සේ පාවිච්චි කරනවා)
 app.post('/api/login', (req, res) => {
