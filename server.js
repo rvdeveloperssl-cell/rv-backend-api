@@ -71,7 +71,7 @@ app.post('/api/send-otp', async (req, res) => {
                   🚀 <span style="color: #4F46E5;">RV</span> DEVELOPERS 
                 </span>
               </div>
-              <p style="color: #6b7280; margin: 5px 0 0; font-size: 11px;">&copy; 2026 RV Developers. All Rights Reserved.</p>
+              <p style="color: #6b7280; margin: 5px 0 0; font-size: 11px;">&copy; 2026 RV Developers. All rights reserved.</p>
               <div style="height: 3px; width: 50px; background: #4F46E5; margin: 10px auto; border-radius: 10px;"></div>
             </div>
           </div>
