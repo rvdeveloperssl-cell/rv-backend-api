@@ -28,7 +28,7 @@ const transporter = nodemailer.createTransport({
 
 // සරල පරීක්ෂණයක්
 app.get('/', (req, res) => {
-    res.send('RV Backend API is Running!');
+    res.send('RV Backend API Updated - 2026!');
 });
 
 // --- OTP යවන API එක (ඔයාගේ ලස්සන HTML එකත් එක්ක) ---
