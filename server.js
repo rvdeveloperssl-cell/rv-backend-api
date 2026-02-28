@@ -65,14 +65,30 @@ app.post('/api/register', (req, res) => {
 // Login API
 app.post('/api/login', (req, res) => {
     const { email, password } = req.body;
-    db.query('SELECT * FROM users WHERE email = ?', [email], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        if (results.length === 0) return res.status(401).json({ success: false, message: 'User not found' });
+    
+    // 1. මෙතනින් Terminal එකේ පෙන්වයි හරියටම Frontend එකෙන් එන Email එක මොකක්ද කියලා
+    console.log("--- Login Attempt ---");
+    console.log("Email received:", `"${email}"`); // Email එක වටේ "" දාලා තියෙන්නේ space තියෙනවද බලන්න ලේසි වෙන්නයි
+    console.log("Password received:", `"${password}"`);
+
+    // 2. Database එකේ හොයනවා (Spaces අයින් කරලා TRIM() කරලා බලමු)
+    db.query('SELECT * FROM users WHERE TRIM(email) = TRIM(?)', [email], (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: err.message });
+        }
+        
+        if (results.length === 0) {
+            console.log("Result: User not found in DB!");
+            return res.status(401).json({ success: false, message: 'User not found' });
+        }
         
         const user = results[0];
         if (user.password === password) {
+            console.log("Result: Login Successful!");
             res.json({ success: true, user: user });
         } else {
+            console.log("Result: Invalid password!");
             res.status(401).json({ success: false, message: 'Invalid password' });
         }
     });
