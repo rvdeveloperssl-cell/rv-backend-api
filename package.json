@@ -9,7 +9,7 @@
     "dotenv": "^16.3.1",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.0"
+    "axios": "^1.6.0"
   },
   "scripts": {
     "start": "node server.js"
