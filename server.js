@@ -94,5 +94,48 @@ app.post('/api/login', (req, res) => {
     });
 });
 
+// --- SOFTWARE MANAGEMENT API (MySQL) ---
+
+// 1. Get All Software
+app.get('/api/software', (req, res) => {
+    db.query('SELECT * FROM software ORDER BY createdAt DESC', (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 2. Add New Software
+app.post('/api/software', (req, res) => {
+    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl } = req.body;
+    const query = `INSERT INTO software (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    
+    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: result.insertId });
+    });
+});
+
+// 3. Update Software
+app.put('/api/software/:id', (req, res) => {
+    const { id } = req.params;
+    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl } = req.body;
+    const query = `UPDATE software SET name=?, description=?, price=?, version=?, category=?, imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=? WHERE id=?`;
+
+    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// 4. Delete Software
+app.delete('/api/software/:id', (req, res) => {
+    const { id } = req.params;
+    db.query('DELETE FROM software WHERE id = ?', [id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
