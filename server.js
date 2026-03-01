@@ -106,11 +106,17 @@ app.get('/api/software', (req, res) => {
 
 // 2. Add New Software
 app.post('/api/software', (req, res) => {
-    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl } = req.body;
-    const query = `INSERT INTO software (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    // Front-end එකෙන් එවන data මෙතනට ගන්නවා
+    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink } = req.body;
     
-    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl], (err, result) => {
-        if (err) return res.status(500).json({ error: err.message });
+    // SQL Query එකට අලුත් field දෙක එකතු කළා
+    const query = `INSERT INTO software (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    
+    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, mobileAppUrl, extraLink], (err, result) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ error: err.message });
+        }
         res.json({ success: true, id: result.insertId });
     });
 });
@@ -118,11 +124,16 @@ app.post('/api/software', (req, res) => {
 // 3. Update Software
 app.put('/api/software/:id', (req, res) => {
     const { id } = req.params;
-    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl } = req.body;
-    const query = `UPDATE software SET name=?, description=?, price=?, version=?, category=?, imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=? WHERE id=?`;
+    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink } = req.body;
+    
+    // UPDATE query එකටත් අලුත් field දෙක ඇතුළත් කළා
+    const query = `UPDATE software SET name=?, description=?, price=?, version=?, category=?, imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=?, mobileAppUrl=?, extraLink=? WHERE id=?`;
 
-    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, id], (err, result) => {
-        if (err) return res.status(500).json({ error: err.message });
+    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, mobileAppUrl, extraLink, id], (err, result) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ error: err.message });
+        }
         res.json({ success: true });
     });
 });
