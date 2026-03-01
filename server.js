@@ -206,20 +206,23 @@ app.get('/api/software/:id', (req, res) => {
     });
 });
 
-// --- RV DEVELOPERS PAYMENT SYSTEM ---
+// --- RV DEVELOPERS PAYMENT SYSTEM (FIXED) ---
 
-// 1. Bank Slip Upload & Purchase ekak create kireema
+// 1. Bank Slip Upload & Purchase එකක් create කිරීම
 app.post('/api/payments/bank-transfer', upload.single('slip'), (req, res) => {
     const { userId, softwareId } = req.body;
     const slipUrl = req.file ? `uploads/slips/${req.file.filename}` : null;
     const purchaseId = 'pur_' + Date.now();
 
-    // Software eke price eka database eken gannawa
+    // Software එකේ price එක ගන්නවා
     db.query('SELECT price FROM software WHERE id = ?', [softwareId], (err, results) => {
-        if (err || results.length === 0) return res.status(500).json({ success: false, message: 'Software not found' });
+        if (err || results.length === 0) {
+            return res.status(500).json({ success: false, message: 'Software not found' });
+        }
 
         const amount = results[0].price;
-        const query = `INSERT INTO purchases (id, userId, softwareId, amount, paymentMethod, paymentStatus, slipUrl) VALUES (?, ?, ?, ?, 'bank_transfer', 'pending', ?)`;
+        const query = `INSERT INTO purchases (id, userId, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
+                      VALUES (?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
 
         db.query(query, [purchaseId, userId, softwareId, amount, slipUrl], (err, result) => {
             if (err) return res.status(500).json({ success: false, message: err.message });
@@ -228,7 +231,49 @@ app.post('/api/payments/bank-transfer', upload.single('slip'), (req, res) => {
     });
 });
 
-// 2. User ge purchases okoma ganna
+// 2. Admin ට පෙන්වන්න සියලුම පූජාවන් (මෙන්න මේකයි ඔයාගේ frontend එකට ඕනේ)
+// Frontend එක කතා කරන්නේ මේ URL එකට: /api/admin/purchases/all
+app.get('/api/admin/purchases/all', (req, res) => {
+    const query = `
+        SELECT p.*, u.fullName, s.name as softwareName 
+        FROM purchases p 
+        LEFT JOIN users u ON p.userId = u.id 
+        LEFT JOIN software s ON p.softwareId = s.id 
+        ORDER BY p.createdAt DESC`;
+    
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 3. Admin payment එක verify කිරීම (Frontend එකේ handleVerify එකට අනුව)
+app.post('/api/admin/verify-payment/:id', (req, res) => {
+    const { id } = req.params; // Frontend එකෙන් ID එක එන්නේ මෙහෙම
+    const { adminId } = req.body;
+    
+    const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
+
+    db.query(query, [adminId, id], (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        res.json({ success: true, message: 'Payment verified!' });
+    });
+});
+
+// 4. Admin payment එක reject කිරීම
+app.post('/api/admin/reject-payment/:id', (req, res) => {
+    const { id } = req.params;
+    const { adminId, reason } = req.body;
+    
+    const query = `UPDATE purchases SET paymentStatus = 'rejected', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
+
+    db.query(query, [adminId, id], (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        res.json({ success: true, message: 'Payment rejected!' });
+    });
+});
+
+// 5. User ගේ purchases තමන්ට බලාගන්න
 app.get('/api/purchases/user/:userId', (req, res) => {
     const { userId } = req.params;
     db.query('SELECT p.*, s.name as softwareName FROM purchases p JOIN software s ON p.softwareId = s.id WHERE p.userId = ?', [userId], (err, results) => {
@@ -237,23 +282,24 @@ app.get('/api/purchases/user/:userId', (req, res) => {
     });
 });
 
-// 3. Admin ta pending payments pennanna
+// 6. Admin ට Pending payments විතරක් පෙන්වන්න (Stats වලට සහ Filter වලට)
 app.get('/api/admin/payments/pending', (req, res) => {
-    const query = `SELECT p.*, u.fullName, s.name as softwareName FROM purchases p JOIN users u ON p.userId = u.id JOIN software s ON p.softwareId = s.id WHERE p.paymentStatus = 'pending'`;
+    // මෙතන LEFT JOIN පාවිච්චි කරලා තියෙන්නේ, මොකද යම් හෙයකින් 
+    // user කෙනෙක් delete වුණත් slip එක admin ට පේන්න ඕනේ නිසා.
+    const query = `
+        SELECT p.*, u.fullName, s.name as softwareName 
+        FROM purchases p 
+        LEFT JOIN users u ON p.userId = u.id 
+        LEFT JOIN software s ON p.softwareId = s.id 
+        WHERE p.paymentStatus = 'pending'
+        ORDER BY p.createdAt DESC`;
+
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error("Pending fetch error: ", err.message);
+            return res.status(500).json({ error: err.message });
+        }
         res.json(results);
-    });
-});
-
-// 4. Admin payment eka verify kirima
-app.post('/api/admin/verify-payment', (req, res) => {
-    const { purchaseId, adminId } = req.body;
-    const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
-
-    db.query(query, [adminId, purchaseId], (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Payment verified!' });
     });
 });
 
