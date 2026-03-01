@@ -173,6 +173,16 @@ app.delete('/api/software/:id', (req, res) => {
     });
 });
 
+// Get Single Software by ID
+app.get('/api/software/:id', (req, res) => {
+    const { id } = req.params;
+    db.query('SELECT * FROM software WHERE id = ?', [id], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (results.length === 0) return res.status(404).json({ message: "Not found" });
+        res.json(results[0]);
+    });
+});
+
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
