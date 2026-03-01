@@ -106,15 +106,25 @@ app.get('/api/software', (req, res) => {
 
 // 2. Add New Software
 app.post('/api/software', (req, res) => {
-    // Front-end එකෙන් එවන data මෙතනට ගන්නවා
-    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink } = req.body;
-    
-    // SQL Query එකට අලුත් field දෙක එකතු කළා
-    const query = `INSERT INTO software (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    
-    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, mobileAppUrl, extraLink], (err, result) => {
+    const { 
+        name, description, price, version, category, 
+        imageUrl, systemRequirements, isFree, downloadUrl, 
+        mobileAppUrl, extraLink 
+    } = req.body;
+
+    // මෙතන columns 11 ක් තියෙනවා. database එකේ තියෙන පිළිවෙලටමයි මම දාලා තියෙන්නේ.
+    const query = `INSERT INTO software 
+    (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink, downloadCount) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`; 
+    // අන්තිමට 0 දැම්මේ downloadCount එක default 0 වෙන්න ඕන නිසා.
+
+    db.query(query, [
+        name, description, price, version, category, 
+        imageUrl, systemRequirements, isFree ? 1 : 0, 
+        downloadUrl, mobileAppUrl, extraLink
+    ], (err, result) => {
         if (err) {
-            console.error("Database Error:", err);
+            console.error("SQL Error:", err.message); // Server log එකේ error එක බලාගන්න
             return res.status(500).json({ error: err.message });
         }
         res.json({ success: true, id: result.insertId });
@@ -124,14 +134,25 @@ app.post('/api/software', (req, res) => {
 // 3. Update Software
 app.put('/api/software/:id', (req, res) => {
     const { id } = req.params;
-    const { name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink } = req.body;
-    
-    // UPDATE query එකටත් අලුත් field දෙක ඇතුළත් කළා
-    const query = `UPDATE software SET name=?, description=?, price=?, version=?, category=?, imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=?, mobileAppUrl=?, extraLink=? WHERE id=?`;
+    const { 
+        name, description, price, version, category, 
+        imageUrl, systemRequirements, isFree, downloadUrl, 
+        mobileAppUrl, extraLink 
+    } = req.body;
 
-    db.query(query, [name, description, price, version, category, imageUrl, systemRequirements, isFree ? 1 : 0, downloadUrl, mobileAppUrl, extraLink, id], (err, result) => {
+    const query = `UPDATE software SET 
+    name=?, description=?, price=?, version=?, category=?, 
+    imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=?, 
+    mobileAppUrl=?, extraLink=? 
+    WHERE id=?`;
+
+    db.query(query, [
+        name, description, price, version, category, 
+        imageUrl, systemRequirements, isFree ? 1 : 0, 
+        downloadUrl, mobileAppUrl, extraLink, id
+    ], (err, result) => {
         if (err) {
-            console.error("Database Error:", err);
+            console.error("SQL Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
         res.json({ success: true });
