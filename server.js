@@ -206,38 +206,46 @@ app.get('/api/software/:id', (req, res) => {
     });
 });
 
-// --- RV DEVELOPERS PAYMENT SYSTEM (FIXED) ---
+// --- RV DEVELOPERS PAYMENT SYSTEM (FIXED FOR IMGBB & FULL NAME) ---
 
-// 1. Bank Slip Upload & Purchase එකක් create කිරීම
-app.post('/api/payments/bank-transfer', upload.single('slip'), (req, res) => {
-    const { userId, softwareId } = req.body;
-    const slipUrl = req.file ? `uploads/slips/${req.file.filename}` : null;
+// 1. Bank Slip URL එක සහ Purchase එකක් create කිරීම
+// මෙතන දැන් upload.single('slip') අවශ්‍ය නැත, මොකද එන්නේ string URL එකක් නිසා
+app.post('/api/payments/bank-transfer', (req, res) => {
+    // Frontend එකෙන් දැන් slipUrl එකත් body එකේම එවනවා
+    const { userId, softwareId, slipUrl } = req.body; 
     const purchaseId = 'pur_' + Date.now();
 
-    // Software එකේ price එක ගන්නවා
-    db.query('SELECT price FROM software WHERE id = ?', [softwareId], (err, results) => {
+    // User ගේ නම සහ Software එකේ price එක එකවර ලබා ගනිමු
+    const dataQuery = `
+        SELECT u.fullName, s.price 
+        FROM users u, software s 
+        WHERE u.id = ? AND s.id = ?`;
+
+    db.query(dataQuery, [userId, softwareId], (err, results) => {
         if (err || results.length === 0) {
-            return res.status(500).json({ success: false, message: 'Software not found' });
+            return res.status(500).json({ success: false, message: 'User or Software not found' });
         }
 
+        const fullName = results[0].fullName;
         const amount = results[0].price;
-        const query = `INSERT INTO purchases (id, userId, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
-                      VALUES (?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
 
-        db.query(query, [purchaseId, userId, softwareId, amount, slipUrl], (err, result) => {
+        // දැන් fullName එකත් එක්කම Insert කරනවා, එතකොට කවදාවත් Unknown වෙන්නේ නැහැ
+        const query = `INSERT INTO purchases (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
+                      VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
+
+        db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl], (err, result) => {
             if (err) return res.status(500).json({ success: false, message: err.message });
             res.json({ success: true, message: 'Slip submitted successfully!', purchaseId });
         });
     });
 });
 
-// 2. Admin ට පෙන්වන්න සියලුම පූජාවන් (මෙන්න මේකයි ඔයාගේ frontend එකට ඕනේ)
-// Frontend එක කතා කරන්නේ මේ URL එකට: /api/admin/purchases/all
+// 2. Admin ට පෙන්වන්න සියලුම පූජාවන් (Unknown ප්‍රශ්නය මෙතනින් සම්පූර්ණයෙන්ම ඉවරයි)
 app.get('/api/admin/purchases/all', (req, res) => {
+    // අපි කලින්ම fullName එක save කරපු නිසා JOIN අවශ්‍ය නැහැ, ඒත් අමතර ආරක්ෂාවට LEFT JOIN එකක් තියමු
     const query = `
-        SELECT p.*, u.fullName, s.name as softwareName 
+        SELECT p.*, s.name as softwareName 
         FROM purchases p 
-        LEFT JOIN users u ON p.userId = u.id 
         LEFT JOIN software s ON p.softwareId = s.id 
         ORDER BY p.createdAt DESC`;
     
@@ -247,9 +255,9 @@ app.get('/api/admin/purchases/all', (req, res) => {
     });
 });
 
-// 3. Admin payment එක verify කිරීම (Frontend එකේ handleVerify එකට අනුව)
+// 3. Admin payment එක verify කිරීම
 app.post('/api/admin/verify-payment/:id', (req, res) => {
-    const { id } = req.params; // Frontend එකෙන් ID එක එන්නේ මෙහෙම
+    const { id } = req.params;
     const { adminId } = req.body;
     
     const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
@@ -263,7 +271,7 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
 // 4. Admin payment එක reject කිරීම
 app.post('/api/admin/reject-payment/:id', (req, res) => {
     const { id } = req.params;
-    const { adminId, reason } = req.body;
+    const { adminId } = req.body;
     
     const query = `UPDATE purchases SET paymentStatus = 'rejected', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
 
