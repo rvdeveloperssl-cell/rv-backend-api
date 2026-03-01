@@ -8,6 +8,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+
 // MySQL Connection
 const db = mysql.createPool({
     host: process.env.DB_HOST,
@@ -48,6 +50,27 @@ app.post('/api/send-otp', async (req, res) => {
         res.status(500).json({ success: false, message: 'Could not connect to Google Script.' });
     }
 });
+
+// File upload karanna Multer ona venawa
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Slip save karanna folder ekak hadanawa
+const uploadDir = 'uploads/slips';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'slip-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+app.use('/uploads', express.static('uploads'));
 
 // Register API
 app.post('/api/register', (req, res) => {
@@ -183,6 +206,56 @@ app.get('/api/software/:id', (req, res) => {
     });
 });
 
+// --- RV DEVELOPERS PAYMENT SYSTEM ---
+
+// 1. Bank Slip Upload & Purchase ekak create kireema
+app.post('/api/payments/bank-transfer', upload.single('slip'), (req, res) => {
+    const { userId, softwareId } = req.body;
+    const slipUrl = req.file ? `uploads/slips/${req.file.filename}` : null;
+    const purchaseId = 'pur_' + Date.now();
+
+    // Software eke price eka database eken gannawa
+    db.query('SELECT price FROM software WHERE id = ?', [softwareId], (err, results) => {
+        if (err || results.length === 0) return res.status(500).json({ success: false, message: 'Software not found' });
+
+        const amount = results[0].price;
+        const query = `INSERT INTO purchases (id, userId, softwareId, amount, paymentMethod, paymentStatus, slipUrl) VALUES (?, ?, ?, ?, 'bank_transfer', 'pending', ?)`;
+
+        db.query(query, [purchaseId, userId, softwareId, amount, slipUrl], (err, result) => {
+            if (err) return res.status(500).json({ success: false, message: err.message });
+            res.json({ success: true, message: 'Slip submitted successfully!', purchaseId });
+        });
+    });
+});
+
+// 2. User ge purchases okoma ganna
+app.get('/api/purchases/user/:userId', (req, res) => {
+    const { userId } = req.params;
+    db.query('SELECT p.*, s.name as softwareName FROM purchases p JOIN software s ON p.softwareId = s.id WHERE p.userId = ?', [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 3. Admin ta pending payments pennanna
+app.get('/api/admin/payments/pending', (req, res) => {
+    const query = `SELECT p.*, u.fullName, s.name as softwareName FROM purchases p JOIN users u ON p.userId = u.id JOIN software s ON p.softwareId = s.id WHERE p.paymentStatus = 'pending'`;
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 4. Admin payment eka verify kirima
+app.post('/api/admin/verify-payment', (req, res) => {
+    const { purchaseId, adminId } = req.body;
+    const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
+
+    db.query(query, [adminId, purchaseId], (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        res.json({ success: true, message: 'Payment verified!' });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
