@@ -106,25 +106,28 @@ app.get('/api/software', (req, res) => {
 
 // 2. Add New Software
 app.post('/api/software', (req, res) => {
+    // Firebase වලට අදාළ 'requiresFirebase' මෙතනින් අයින් කළා
     const { 
         name, description, price, version, category, 
         imageUrl, systemRequirements, isFree, downloadUrl, 
-        mobileAppUrl, extraLink 
+        mobileAppUrl, extraLink, features 
     } = req.body;
 
-    // මෙතන columns 11 ක් තියෙනවා. database එකේ තියෙන පිළිවෙලටමයි මම දාලා තියෙන්නේ.
+    // Database එකේ තියෙන columns 12 ට ගැලපෙන SQL එක
     const query = `INSERT INTO software 
-    (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink, downloadCount) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`; 
-    // අන්තිමට 0 දැම්මේ downloadCount එක default 0 වෙන්න ඕන නිසා.
+    (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink, features, downloadCount) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`;
+
+    // Features ටික array එකක් විදිහට ආවොත් ඒක string එකක් කරලා සේව් කරනවා
+    const featuresData = Array.isArray(features) ? JSON.stringify(features) : features;
 
     db.query(query, [
         name, description, price, version, category, 
         imageUrl, systemRequirements, isFree ? 1 : 0, 
-        downloadUrl, mobileAppUrl, extraLink
+        downloadUrl, mobileAppUrl, extraLink, featuresData
     ], (err, result) => {
         if (err) {
-            console.error("SQL Error:", err.message); // Server log එකේ error එක බලාගන්න
+            console.error("❌ SQL Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
         res.json({ success: true, id: result.insertId });
@@ -137,22 +140,24 @@ app.put('/api/software/:id', (req, res) => {
     const { 
         name, description, price, version, category, 
         imageUrl, systemRequirements, isFree, downloadUrl, 
-        mobileAppUrl, extraLink 
+        mobileAppUrl, extraLink, features 
     } = req.body;
 
     const query = `UPDATE software SET 
     name=?, description=?, price=?, version=?, category=?, 
     imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=?, 
-    mobileAppUrl=?, extraLink=? 
+    mobileAppUrl=?, extraLink=?, features=? 
     WHERE id=?`;
+
+    const featuresData = Array.isArray(features) ? JSON.stringify(features) : features;
 
     db.query(query, [
         name, description, price, version, category, 
         imageUrl, systemRequirements, isFree ? 1 : 0, 
-        downloadUrl, mobileAppUrl, extraLink, id
+        downloadUrl, mobileAppUrl, extraLink, featuresData, id
     ], (err, result) => {
         if (err) {
-            console.error("SQL Error:", err.message);
+            console.error("❌ SQL Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
         res.json({ success: true });
