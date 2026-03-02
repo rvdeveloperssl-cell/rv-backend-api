@@ -254,7 +254,7 @@ app.post('/api/payments/bank-transfer', (req, res) => {
 
 // 2. Admin ට පෙන්වන්න සියලුම පූජාවන් (Unknown ප්‍රශ්නය මෙතනින් සම්පූර්ණයෙන්ම ඉවරයි)
 app.get('/api/admin/purchases/all', (req, res) => {
-    // අපි කලින්ම fullName එක save කරපු නිසා JOIN අවශ්‍ය නැහැ, ඒත් අමතර ආරක්ෂාවට LEFT JOIN එකක් තියමු
+    // මෙතනදී අපි පරණ records වල fullName නැති වුණොත් 'Unknown' පෙන්වන විදිහට හදමු
     const query = `
         SELECT p.*, s.name as softwareName 
         FROM purchases p 
@@ -262,20 +262,33 @@ app.get('/api/admin/purchases/all', (req, res) => {
         ORDER BY p.createdAt DESC`;
     
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error("Fetch Error:", err);
+            return res.status(500).json({ error: err.message });
+        }
         res.json(results);
     });
 });
 
 // 3. Admin payment එක verify කිරීම
 app.post('/api/admin/verify-payment/:id', (req, res) => {
-    const { id } = req.params;
-    const { adminId } = req.body;
+    const purchaseId = req.params.id; // URL එකෙන් ID එක ගන්නවා
+    const { adminId } = req.body; // Body එකෙන් adminId ගන්නවා
     
+    console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
+
     const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
 
-    db.query(query, [adminId, id], (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
+    db.query(query, [adminId, purchaseId], (err, result) => {
+        if (err) {
+            console.error("SQL Error:", err);
+            return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Purchase record not found' });
+        }
+
         res.json({ success: true, message: 'Payment verified!' });
     });
 });
