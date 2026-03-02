@@ -336,5 +336,43 @@ app.get('/api/admin/payments/pending', (req, res) => {
     });
 });
 
+// --- CLIENT DASHBOARD API FIXES ---
+
+// 1. User ගේ සියලුම Licenses (Software) ලබා ගැනීම
+app.get('/api/licenses/user/:userId', (req, res) => {
+    const { userId } = req.params;
+    const query = `
+        SELECT p.*, s.name as softwareName, s.description 
+        FROM purchases p 
+        JOIN software s ON p.softwareId = s.id 
+        WHERE p.userId = ? AND p.paymentStatus = 'verified'`;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 2. User ගේ සියලුම Invoices (ගෙවීම් ඉතිහාසය) ලබා ගැනීම
+app.get('/api/invoices/user/:userId', (req, res) => {
+    const { userId } = req.params;
+    const query = `SELECT * FROM purchases WHERE userId = ? ORDER BY createdAt DESC`;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 3. ලබා ගත හැකි සියලුම Software විස්තර ලබා ගැනීම
+app.get('/api/software/all', (req, res) => {
+    const query = `SELECT * FROM software`;
+    
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
