@@ -366,10 +366,15 @@ app.get('/api/invoices/user/:userId', (req, res) => {
 
 // 3. ලබා ගත හැකි සියලුම Software විස්තර ලබා ගැනීම
 app.get('/api/software/all', (req, res) => {
-    const query = `SELECT * FROM software`;
+    // Database එකේ 'software' කියන table එකෙන් දත්ත ගන්නවා
+    const query = `SELECT * FROM software ORDER BY name ASC`;
     
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error("Software fetch error:", err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+        // Frontend එක බලාපොරොත්තු වෙන්නේ Array එකක්
         res.json(results);
     });
 });
