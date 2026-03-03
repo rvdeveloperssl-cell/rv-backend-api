@@ -119,7 +119,19 @@ app.post('/api/login', (req, res) => {
 
 // --- SOFTWARE MANAGEMENT API (MySQL) ---
 
-// 1. Get All Software
+// 1. මේක තමයි Dashboard එකට ඕන කරන එක (වැදගත්ම එක)
+app.get('/api/software/all', (req, res) => {
+    const query = `SELECT * FROM software ORDER BY name ASC`;
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("❌ Software fetch error:", err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+        res.json(results);
+    });
+});
+
+// 2. සාමාන්‍යයෙන් ඔක්කොම සොෆ්ට්වෙයාර් ගන්න එක (Admin එකට වගේ)
 app.get('/api/software', (req, res) => {
     db.query('SELECT * FROM software ORDER BY createdAt DESC', (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -127,7 +139,17 @@ app.get('/api/software', (req, res) => {
     });
 });
 
-// 2. Add New Software
+// 3. එක සොෆ්ට්වෙයාර් එකක් ID එකෙන් ගන්න එක (මේක අන්තිමට තියෙන්න ඕනේ)
+app.get('/api/software/:id', (req, res) => {
+    const { id } = req.params;
+    db.query('SELECT * FROM software WHERE id = ?', [id], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (results.length === 0) return res.status(404).json({ message: "Not found" });
+        res.json(results[0]);
+    });
+});
+
+// 4. Add New Software
 app.post('/api/software', (req, res) => {
     // Firebase වලට අදාළ 'requiresFirebase' මෙතනින් අයින් කළා
     const { 
@@ -157,7 +179,7 @@ app.post('/api/software', (req, res) => {
     });
 });
 
-// 3. Update Software
+// 5. Update Software
 app.put('/api/software/:id', (req, res) => {
     const { id } = req.params;
     const { 
@@ -187,7 +209,7 @@ app.put('/api/software/:id', (req, res) => {
     });
 });
 
-// 4. Delete Software
+// 6. Delete Software
 app.delete('/api/software/:id', (req, res) => {
     const { id } = req.params;
     db.query('DELETE FROM software WHERE id = ?', [id], (err, result) => {
@@ -196,15 +218,7 @@ app.delete('/api/software/:id', (req, res) => {
     });
 });
 
-// Get Single Software by ID
-app.get('/api/software/:id', (req, res) => {
-    const { id } = req.params;
-    db.query('SELECT * FROM software WHERE id = ?', [id], (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (results.length === 0) return res.status(404).json({ message: "Not found" });
-        res.json(results[0]);
-    });
-});
+
 
 // --- RV DEVELOPERS PAYMENT SYSTEM (FIXED FOR IMGBB & FULL NAME) ---
 
@@ -364,20 +378,7 @@ app.get('/api/invoices/user/:userId', (req, res) => {
     });
 });
 
-// 3. ලබා ගත හැකි සියලුම Software විස්තර ලබා ගැනීම
-app.get('/api/software/all', (req, res) => {
-    // Database එකේ 'software' කියන table එකෙන් දත්ත ගන්නවා
-    const query = `SELECT * FROM software ORDER BY name ASC`;
-    
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error("Software fetch error:", err);
-            return res.status(500).json({ success: false, error: err.message });
-        }
-        // Frontend එක බලාපොරොත්තු වෙන්නේ Array එකක්
-        res.json(results);
-    });
-});
+
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
