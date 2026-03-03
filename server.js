@@ -286,24 +286,59 @@ app.get('/api/admin/purchases/all', (req, res) => {
 
 // 3. Admin payment එක verify කිරීම
 app.post('/api/admin/verify-payment/:id', (req, res) => {
-    const purchaseId = req.params.id; // URL එකෙන් ID එක ගන්නවා
-    const { adminId } = req.body; // Body එකෙන් adminId ගන්නවා
-    
+    const purchaseId = req.params.id;
+    const { adminId } = req.body;
+
     console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
 
-    const query = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
+    // 1. මුලින්ම පරණ Purchase එකේ දත්ත (userId, softwareId) හොයාගන්නවා
+    const getPurchaseData = `SELECT userId, softwareId FROM purchases WHERE id = ?`;
 
-    db.query(query, [adminId, purchaseId], (err, result) => {
-        if (err) {
-            console.error("SQL Error:", err);
-            return res.status(500).json({ success: false, message: 'Database error' });
+    db.query(getPurchaseData, [purchaseId], (err, rows) => {
+        if (err || rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Purchase not found' });
         }
+
+        const { userId, softwareId } = rows[0];
+
+        // 2. License Key එක හදනවා (ඔයාගේ format එකට)
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const part1 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+        const part2 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+        const finalKey = `RVQ-${part1}-${part2}`;
+
+        // 3. Expiry Date එක හදනවා (අද සිට වසර 1ක් ඉදිරියට)
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' '); // MySQL format (YYYY-MM-DD HH:MM:SS)
+
+        // 4. SQL Queries දෙකම එකට ක්‍රියාත්මක කරනවා (UPDATE & INSERT)
+        const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
         
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, message: 'Purchase record not found' });
-        }
+        // ඔයා දුන්න table columns: id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations
+        const insertLicense = `INSERT INTO licenses 
+            (id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations) 
+            VALUES (?, ?, ?, ?, 'active', NOW(), ?, 1, 0)`;
 
-        res.json({ success: true, message: 'Payment verified!' });
+        const licenseId = 'lic_' + Date.now();
+
+        // Transaction එකක් වගේ කරමු
+        db.query(updatePurchase, [adminId, purchaseId], (err) => {
+            if (err) return res.status(500).json({ success: false, message: 'Update error' });
+
+            db.query(insertLicense, [licenseId, softwareId, userId, finalKey, formattedExpiry], (err) => {
+                if (err) {
+                    console.error("❌ License Save Error:", err.message);
+                    return res.status(500).json({ success: false, message: 'Failed to generate license' });
+                }
+
+                res.json({ 
+                    success: true, 
+                    message: 'Payment verified and License generated!',
+                    licenseKey: finalKey 
+                });
+            });
+        });
     });
 });
 
