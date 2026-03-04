@@ -413,7 +413,37 @@ app.get('/api/invoices/user/:userId', (req, res) => {
     });
 });
 
+app.get('/api/admin/clients', (req, res) => {
+    // අපි users table එකේ තියෙන අපිට අවශ්‍ය ඔක්කොම columns ටික SELECT කරගමු
+    // ඔයාගේ table එකේ companyName column එකක් තියෙනවා නම් ඒකත් මෙතනට දාන්න
+    const query = `
+        SELECT 
+            id, 
+            fullName, 
+            email, 
+            phone, 
+            companyName, 
+            createdAt, 
+            role 
+        FROM users 
+        WHERE role = 'client' 
+        ORDER BY createdAt DESC
+    `;
 
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ 
+                success: false, 
+                message: "Internal Server Error", 
+                error: err.message 
+            });
+        }
+        
+        // Frontend එකට කෙලින්ම array එක යවනවා
+        res.json(results);
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
