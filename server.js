@@ -557,7 +557,8 @@ app.get('/api/admin/clients', (req, res) => {
             email, 
             phone,
             nic,
-            companyName, 
+            companyName,
+            isVerified,
             createdAt, 
             role 
         FROM users 
