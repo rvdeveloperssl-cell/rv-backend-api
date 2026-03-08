@@ -484,15 +484,23 @@ app.get('/api/admin/activities/recent', (req, res) => {
 
 // Client කෙනෙක්ව Verify කිරීම සඳහා API එක
 app.put('/api/admin/clients/:id/verify', (req, res) => {
-    const clientId = req.params.id;
-    const { isVerified } = req.body; // true හෝ false ලෙස එවන්න
+    const clientId = req.params.id; // URL එකෙන් එන ID එක
+    const { isVerified } = req.body; 
 
+    // වැදගත්: clientId එක Number එකක් බවට පත් කරන්න (ඔයාගේ DB එකේ id එක INT නම්)
     const query = "UPDATE users SET isVerified = ? WHERE id = ?";
+    
     db.query(query, [isVerified ? 1 : 0, clientId], (err, result) => {
         if (err) {
-            console.error(err);
+            console.error("Database Error:", err);
             return res.status(500).json({ success: false, message: "Database error" });
         }
+        
+        // ඇත්තටම row එකක් update වුනාද කියලා බලන්න
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: "User not found or ID mismatch" });
+        }
+
         res.json({ success: true, message: "Client status updated" });
     });
 });
