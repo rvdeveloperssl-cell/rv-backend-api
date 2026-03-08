@@ -405,15 +405,59 @@ app.get('/api/admin/payments/pending', (req, res) => {
     });
 });
 
+// 1. සියලුම Licenses ලබා ගැනීම (Admin සඳහා)
+app.get('/api/admin/licenses/all', (req, res) => {
+    // මෙහිදී 'users' ටේබල් එක සමඟ JOIN කර fullName එක ලබා ගනී
+    const query = `
+        SELECT l.*, u.fullName 
+        FROM licenses l
+        LEFT JOIN users u ON l.userId = u.id
+        ORDER BY l.createdAt DESC`;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Fetch Licenses Error:", err);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(results);
+    });
+});
+
+// 2. Expiry Date එක යාවත්කාලීන කිරීම
 app.put('/api/admin/licenses/:id/expiry', (req, res) => {
     const { id } = req.params;
-    const { expiresAt } = req.body; // "YYYY-MM-DD HH:MM:SS"
+    const { expiresAt } = req.body; // මෙය "YYYY-MM-DD HH:MM:SS" ආකෘතියෙන් ලැබිය යුතුයි
+
+    if (!expiresAt) {
+        return res.status(400).json({ success: false, message: 'Expiry date is required' });
+    }
 
     const query = `UPDATE licenses SET expiresAt = ? WHERE id = ?`;
 
     db.query(query, [expiresAt, id], (err, result) => {
-        if (err) return res.status(500).json({ success: false, error: err.message });
-        res.json({ success: true, message: 'Expiry date updated successfully!' });
+        if (err) {
+            console.error("Update Expiry Error:", err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'License not found' });
+        }
+
+        res.json({ success: true, message: 'License expiry updated successfully!' });
+    });
+});
+
+// 3. License එකක් Block/Unblock කිරීම
+app.put('/api/admin/licenses/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body; // 'active' හෝ 'blocked'
+
+    const query = `UPDATE licenses SET status = ? WHERE id = ?`;
+
+    db.query(query, [status, id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, message: `License status changed to ${status}` });
     });
 });
 
