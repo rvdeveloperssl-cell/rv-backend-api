@@ -555,7 +555,8 @@ app.get('/api/admin/clients', (req, res) => {
             id, 
             fullName, 
             email, 
-            phone, 
+            phone,
+            nic,
             companyName, 
             createdAt, 
             role 
