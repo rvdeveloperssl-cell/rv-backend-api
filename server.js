@@ -301,7 +301,7 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
 
         const { userId, softwareId } = rows[0];
 
-        // 2. License Key එක හදනවා (ඔයාගේ format එකට)
+        // 2. License Key එක හදනවා
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         const part1 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
         const part2 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -310,26 +310,29 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
         // 3. Expiry Date එක හදනවා (අද සිට වසර 1ක් ඉදිරියට)
         const expiryDate = new Date();
         expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-        const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' '); // MySQL format (YYYY-MM-DD HH:MM:SS)
+        const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' '); 
 
-        // 4. SQL Queries දෙකම එකට ක්‍රියාත්මක කරනවා (UPDATE & INSERT)
-        const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
-        
-        // ඔයා දුන්න table columns: id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations
+        const licenseId = 'lic_' + Date.now();
+
+        // 4. මුලින්ම License එක සේව් කරනවා
         const insertLicense = `INSERT INTO licenses 
             (id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations) 
             VALUES (?, ?, ?, ?, 'active', NOW(), ?, 1, 0)`;
 
-        const licenseId = 'lic_' + Date.now();
+        db.query(insertLicense, [licenseId, softwareId, userId, finalKey, formattedExpiry], (err) => {
+            if (err) {
+                console.error("❌ License Save Error:", err.message);
+                return res.status(500).json({ success: false, message: 'Failed to generate license' });
+            }
 
-        // Transaction එකක් වගේ කරමු
-        db.query(updatePurchase, [adminId, purchaseId], (err) => {
-            if (err) return res.status(500).json({ success: false, message: 'Update error' });
+            // 5. දැන් Purchase එක Update කරනවා - මෙතනදී අපි licenseId එකත් සේව් කරනවා
+            // ඔබේ purchases table එකේ licenseId නමින් column එකක් තිබිය යුතුය.
+            const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ?, licenseId = ? WHERE id = ?`;
 
-            db.query(insertLicense, [licenseId, softwareId, userId, finalKey, formattedExpiry], (err) => {
+            db.query(updatePurchase, [adminId, licenseId, purchaseId], (err) => {
                 if (err) {
-                    console.error("❌ License Save Error:", err.message);
-                    return res.status(500).json({ success: false, message: 'Failed to generate license' });
+                    console.error("❌ Purchase Update Error:", err.message);
+                    return res.status(500).json({ success: false, message: 'Update error' });
                 }
 
                 res.json({ 
@@ -390,14 +393,28 @@ app.get('/api/admin/payments/pending', (req, res) => {
 // 1. User ගේ සියලුම Licenses (Software) ලබා ගැනීම
 app.get('/api/licenses/user/:userId', (req, res) => {
     const { userId } = req.params;
+    
+    // මෙතනදී අපි 'licenses' ටේබල් එක 'software' ටේබල් එක සමඟ JOIN කරනවා
+    // එවිට පරණ විදිහටම softwareName සහ description ලැබෙන අතරම, 
+    // අලුතින් licenseKey, expiresAt, සහ activations දත්තත් ලැබේ.
     const query = `
-        SELECT p.*, s.name as softwareName, s.description 
-        FROM purchases p 
-        JOIN software s ON p.softwareId = s.id 
-        WHERE p.userId = ? AND p.paymentStatus = 'verified'`;
+        SELECT 
+            l.*, 
+            s.name as softwareName, 
+            s.description,
+            s.imageUrl
+        FROM licenses l
+        JOIN software s ON l.softwareId = s.id 
+        WHERE l.userId = ? AND l.status = 'active'
+        ORDER BY l.createdAt DESC`;
 
     db.query(query, [userId], (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error("❌ Fetch Licenses Error:", err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        
+        // Frontend එකට සියලුම දත්ත (License Key, Expiry, etc.) සහිත array එක යවයි
         res.json(results);
     });
 });
