@@ -462,6 +462,26 @@ app.put('/api/admin/licenses/:id/status', (req, res) => {
     });
 });
 
+// පද්ධතියේ අලුත්ම ක්‍රියාකාරකම් (Recent Activity) ලබා ගැනීම
+app.get('/api/admin/activities/recent', (req, res) => {
+    // මෙතනදී 'purchases' ටේබල් එකෙන් අලුත්ම දත්ත හෝ 
+    // වෙනම activity_logs ටේබල් එකක් තියෙනවා නම් ඒක පාවිච්චි කරන්න පුළුවන්.
+    // දැනට අපි purchases සහ licenses වල සිදුවීම් පෙන්වමු.
+    const query = `
+        (SELECT 'Purchase' as type, CONCAT('New purchase of LKR ', amount) as details, createdAt 
+         FROM purchases)
+        UNION
+        (SELECT 'License' as type, CONCAT('License generated: ', licenseKey) as details, createdAt 
+         FROM licenses)
+        ORDER BY createdAt DESC 
+        LIMIT 10`;
+
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
 // --- CLIENT DASHBOARD API FIXES ---
 
 // 1. User ගේ සියලුම Licenses (Software) ලබා ගැනීම
