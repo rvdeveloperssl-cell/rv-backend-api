@@ -482,6 +482,21 @@ app.get('/api/admin/activities/recent', (req, res) => {
     });
 });
 
+// Client කෙනෙක්ව Verify කිරීම සඳහා API එක
+app.put('/api/admin/clients/:id/verify', (req, res) => {
+    const clientId = req.params.id;
+    const { isVerified } = req.body; // true හෝ false ලෙස එවන්න
+
+    const query = "UPDATE users SET isVerified = ? WHERE id = ?";
+    db.query(query, [isVerified ? 1 : 0, clientId], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        res.json({ success: true, message: "Client status updated" });
+    });
+});
+
 // --- CLIENT DASHBOARD API FIXES ---
 
 // 1. User ගේ සියලුම Licenses (Software) ලබා ගැනීම
