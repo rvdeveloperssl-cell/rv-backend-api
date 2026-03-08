@@ -225,19 +225,25 @@ app.delete('/api/software/:id', (req, res) => {
 // 1. Bank Slip URL එක සහ Purchase එකක් create කිරීම
 // මෙතන දැන් upload.single('slip') අවශ්‍ය නැත, මොකද එන්නේ string URL එකක් නිසා
 app.post('/api/payments/bank-transfer', (req, res) => {
-    // Frontend එකෙන් එවන data ටික මෙතනට එනවා
+    // 1. Frontend එකෙන් එවන දත්ත ලබා ගැනීම
     const { userId, softwareId, slipUrl } = req.body; 
     
-    // මේ console.log එක දාලා බලන්න terminal එකේ data වැටෙනවාද කියලා
+    console.log("--- New Payment Submission ---");
     console.log("Received Data:", req.body);
 
+    // 2. දත්ත null ද කියා පරීක්ෂා කිරීම (Safety Check)
     if (!userId || !softwareId || !slipUrl) {
+        console.error("❌ Error: Missing required fields");
         return res.status(400).json({ success: false, message: 'Missing required data' });
     }
 
-    const purchaseId = 'pur_' + Date.now();
+    // 3. IDs සෑදීම
+    const timestamp = Date.now();
+    const purchaseId = 'pur_' + timestamp;
+    // පෙන්වීමට පමණක් ලස්සන Invoice අංකයක් (Prefix එකක් සමඟ)
+    const invoiceNo = `INV-${timestamp.toString().slice(-8)}`; 
 
-    // User ගේ fullName එක සහ Software එකේ price එක ගන්නවා
+    // 4. User ගේ fullName එක සහ Software එකේ price එක ලබා ගැනීම
     const dataQuery = `
         SELECT u.fullName, s.price 
         FROM users u, software s 
@@ -245,23 +251,34 @@ app.post('/api/payments/bank-transfer', (req, res) => {
 
     db.query(dataQuery, [userId, softwareId], (err, results) => {
         if (err || results.length === 0) {
-            console.error("DB Error or No results:", err);
+            console.error("❌ DB Error or No results:", err);
             return res.status(500).json({ success: false, message: 'User or Software not found' });
         }
 
         const fullName = results[0].fullName;
         const amount = results[0].price;
 
-        // දැන් Purchases table එකට දත්ත ඇතුළත් කරනවා
-        const query = `INSERT INTO purchases (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
-                      VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
+        // 5. Purchases table එකට දත්ත ඇතුළත් කිරීම
+        // මෙහිදී අපි purchaseId එකම Primary ID එක ලෙස පාවිච්චි කරනවා
+        const query = `INSERT INTO purchases 
+            (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
+            VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
 
         db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl], (err, result) => {
             if (err) {
-                console.error("Insert Error:", err);
+                console.error("❌ Insert Error:", err);
                 return res.status(500).json({ success: false, message: err.message });
             }
-            res.json({ success: true, message: 'Slip submitted successfully!', purchaseId });
+
+            console.log("✅ Success: Payment record created with ID:", purchaseId);
+            
+            // සාර්ථක ප්‍රතිචාරය සමඟ invoiceNo එකත් යවනවා
+            res.json({ 
+                success: true, 
+                message: 'Slip submitted successfully!', 
+                purchaseId: purchaseId,
+                invoiceNo: invoiceNo 
+            });
         });
     });
 });
