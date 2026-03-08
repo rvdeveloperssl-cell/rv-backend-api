@@ -407,7 +407,7 @@ app.get('/api/admin/payments/pending', (req, res) => {
 
 // 1. සියලුම Licenses ලබා ගැනීම (Admin සඳහා)
 app.get('/api/admin/licenses/all', (req, res) => {
-    // මෙහිදී 'users' ටේබල් එක සමඟ JOIN කර fullName එක ලබා ගනී
+    // මෙහිදී licenses table එක සහ users table එක JOIN කරfullName එක ලබා ගනී
     const query = `
         SELECT l.*, u.fullName 
         FROM licenses l
@@ -416,9 +416,10 @@ app.get('/api/admin/licenses/all', (req, res) => {
 
     db.query(query, (err, results) => {
         if (err) {
-            console.error("Fetch Licenses Error:", err);
-            return res.status(500).json({ error: err.message });
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: err.message });
         }
+        // දත්ත සාර්ථකව ලැබුණොත් ඒවා යවන්න
         res.json(results);
     });
 });
