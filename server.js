@@ -405,6 +405,18 @@ app.get('/api/admin/payments/pending', (req, res) => {
     });
 });
 
+app.put('/api/admin/licenses/:id/expiry', (req, res) => {
+    const { id } = req.params;
+    const { expiresAt } = req.body; // "YYYY-MM-DD HH:MM:SS"
+
+    const query = `UPDATE licenses SET expiresAt = ? WHERE id = ?`;
+
+    db.query(query, [expiresAt, id], (err, result) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, message: 'Expiry date updated successfully!' });
+    });
+});
+
 // --- CLIENT DASHBOARD API FIXES ---
 
 // 1. User ගේ සියලුම Licenses (Software) ලබා ගැනීම
