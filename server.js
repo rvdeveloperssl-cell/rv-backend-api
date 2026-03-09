@@ -24,30 +24,54 @@ app.get('/', (req, res) => {
     res.send('RV Backend API Running via Google Script - 2026!');
 });
 
+// --- 1. පොදුවේ Email යවන Function එක (Node.js backend ඇතුළේ) ---
+// මේක ඔයාගේ server.js එකේ ඉහළින්ම දාගන්න.
+async function sendEmailViaScript(payload) {
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxDBtNzkGL685gbIA6foL6FyD-JE7usPQ32mtw1_QuM4KZo_GkZvsXSvA3pQzc41psHXA/exec';
+    try {
+        const response = await axios.post(GOOGLE_SCRIPT_URL, payload);
+        // Google Script එක "Success" කියලා එවුවොත් true, නැත්නම් false
+        return response.data === "Success";
+    } catch (error) {
+        console.error("❌ Email Script Error:", error.message);
+        return false;
+    }
+}
+
 // --- OTP යවන API එක (Google Script එකට Connect කළා) ---
 app.post('/api/send-otp', async (req, res) => {
     const { email, otp } = req.body;
-    
-    // ඔයාගේ Google Script URL එක මෙතනට දාන්න
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxDBtNzkGL685gbIA6foL6FyD-JE7usPQ32mtw1_QuM4KZo_GkZvsXSvA3pQzc41psHXA/exec';
+
+    if (!email || !otp) {
+        return res.status(400).json({ success: false, message: 'Missing email or otp' });
+    }
 
     try {
-        // අපි Google Script එකට POST Request එකක් යවනවා Email එක සහ OTP එක එක්ක
-        const response = await axios.post(GOOGLE_SCRIPT_URL, {
+        // අපි හදපු පොදු function එකට Payload එක යවනවා
+        // මෙතන type එක 'otp' කියලා යැව්වම Google Script එකේ logic එකට ගැලපෙනවා
+        const isSent = await sendEmailViaScript({
+            type: 'otp',
             email: email,
             otp: otp
         });
 
-        // Google Script එක "Success" කියලා එවුවොත් විතරක් Frontend එකට Success යවනවා
-        if (response.data === "Success") {
-            res.status(200).json({ success: true, message: 'OTP sent successfully via Google Script!' });
+        if (isSent) {
+            res.status(200).json({ 
+                success: true, 
+                message: 'OTP sent successfully via Google Script!' 
+            });
         } else {
-            console.error("Script Error Response:", response.data);
-            res.status(500).json({ success: false, message: 'Google Script failed to send email.' });
+            res.status(500).json({ 
+                success: false, 
+                message: 'Google Script failed to send email.' 
+            });
         }
     } catch (error) {
-        console.error("Axios Error:", error.message);
-        res.status(500).json({ success: false, message: 'Could not connect to Google Script.' });
+        console.error("❌ API Error:", error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error.' 
+        });
     }
 });
 
@@ -79,9 +103,21 @@ app.post('/api/register', (req, res) => {
 
     const query = `INSERT INTO users (id, fullName, email, phone, nic, address, companyName, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client')`;
     
-    db.query(query, [id, fullName, email, phone, nic, address, companyName, password], (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'User registered successfully!' });
+    db.query(query, [id, fullName, email, phone, nic, address, companyName, password], async (err, result) => {
+        if (err) {
+            console.error("❌ SQL Error:", err.message);
+            return res.status(500).json({ success: false, message: err.message });
+        }
+
+        // --- වැදගත්ම කොටස: User Register වුණාම Welcome Email එක යවනවා ---
+        // මෙතනදී type එක 'welcome' විදිහට අපි Google Script එකට යවනවා
+        await sendEmailViaScript({
+            type: 'welcome',
+            email: email,
+            fullName: fullName
+        });
+
+        res.json({ success: true, message: 'User registered successfully and Welcome Email sent!' });
     });
 });
 
@@ -308,17 +344,23 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
 
     console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
 
-    // 1. මුලින්ම පරණ Purchase එකේ දත්ත (userId, softwareId) හොයාගන්නවා
-    const getPurchaseData = `SELECT userId, softwareId FROM purchases WHERE id = ?`;
+    // 1. මුලින්ම පරණ Purchase එකේ දත්ත (userId, softwareId) සහ User Email එක හොයාගන්නවා
+    // අපි මෙතන JOIN එකක් පාවිච්චි කරනවා Email එක සහ Software Name එක එකපාරම ගන්න
+    const getPurchaseData = `
+        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName 
+        FROM purchases p 
+        JOIN users u ON p.userId = u.id 
+        JOIN software s ON p.softwareId = s.id 
+        WHERE p.id = ?`;
 
     db.query(getPurchaseData, [purchaseId], (err, rows) => {
         if (err || rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Purchase not found' });
         }
 
-        const { userId, softwareId } = rows[0];
+        const { userId, softwareId, email, fullName, softwareName } = rows[0];
 
-        // 2. License Key එක හදනවා
+        // 2. License Key එක හදනවා (ඔයාගේ මුල් code එකමයි)
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         const part1 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
         const part2 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -342,15 +384,24 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
                 return res.status(500).json({ success: false, message: 'Failed to generate license' });
             }
 
-            // 5. දැන් Purchase එක Update කරනවා - මෙතනදී අපි licenseId එකත් සේව් කරනවා
-            // ඔබේ purchases table එකේ licenseId නමින් column එකක් තිබිය යුතුය.
+            // 5. දැන් Purchase එක Update කරනවා
             const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ?, licenseId = ? WHERE id = ?`;
 
-            db.query(updatePurchase, [adminId, licenseId, purchaseId], (err) => {
+            db.query(updatePurchase, [adminId, licenseId, purchaseId], async (err) => {
                 if (err) {
                     console.error("❌ Purchase Update Error:", err.message);
                     return res.status(500).json({ success: false, message: 'Update error' });
                 }
+
+                // --- අලුතින් එකතු කළ කොටස: Purchase Email එක යැවීම ---
+                // License එක සහ Purchase එක DB එකේ update වුණාට පස්සේ මේක ක්‍රියාත්මක වෙනවා
+                await sendEmailViaScript({
+                    type: 'purchase',
+                    email: email,
+                    fullName: fullName,
+                    softwareName: softwareName,
+                    licenseKey: finalKey
+                });
 
                 res.json({ 
                     success: true, 
