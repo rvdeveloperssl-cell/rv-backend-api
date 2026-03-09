@@ -178,9 +178,37 @@ app.get('/api/software', (req, res) => {
 // 3. එක සොෆ්ට්වෙයාර් එකක් ID එකෙන් ගන්න එක (මේක අන්තිමට තියෙන්න ඕනේ)
 app.get('/api/software/:id', (req, res) => {
     const { id } = req.params;
-    db.query('SELECT * FROM software WHERE id = ?', [id], (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (results.length === 0) return res.status(404).json({ message: "Not found" });
+
+    // SQL Query එක: software සහ reviews ටේබල් දෙක JOIN කරලා සාමාන්‍යය ගණනය කරනවා
+    const query = `
+        SELECT 
+            s.*, 
+            COUNT(r.id) AS reviewCount, 
+            IFNULL(AVG(r.rating), 0) AS averageRating 
+        FROM software s
+        LEFT JOIN reviews r ON s.id = r.softwareId
+        WHERE s.id = ?
+        GROUP BY s.id
+    `;
+
+    db.query(query, [id], (err, results) => {
+        if (err) {
+            console.error("Database Error:", err.message);
+            return res.status(500).json({ 
+                success: false, 
+                error: "Internal Server Error" 
+            });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Software not found" 
+            });
+        }
+
+        // සාර්ථකව දත්ත ලැබුණාම response එක යවනවා
+        // මෙහිදී averageRating එක decimal (දශම) අගයක් ලෙස ලැබේ
         res.json(results[0]);
     });
 });
@@ -628,6 +656,29 @@ app.get('/api/admin/clients', (req, res) => {
         }
         
         // Frontend එකට කෙලින්ම array එක යවනවා
+        res.json(results);
+    });
+});
+
+// 1. අලුත් Review එකක් සේව් කිරීම
+app.post('/api/reviews', (req, res) => {
+    const { softwareId, userId, fullName, rating, comment } = req.body;
+    
+    const query = `INSERT INTO reviews (softwareId, userId, fullName, rating, comment) VALUES (?, ?, ?, ?, ?)`;
+    
+    db.query(query, [softwareId, userId, fullName, rating, comment], (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        res.json({ success: true, message: 'Review added successfully!' });
+    });
+});
+
+// 2. සොෆ්ට්වෙයාර් එකකට අදාළ සියලුම Reviews ලබාගැනීම
+app.get('/api/reviews/:softwareId', (req, res) => {
+    const { softwareId } = req.params;
+    const query = `SELECT * FROM reviews WHERE softwareId = ? ORDER BY createdAt DESC`;
+    
+    db.query(query, [softwareId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
         res.json(results);
     });
 });
