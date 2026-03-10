@@ -694,5 +694,19 @@ app.get('/api/reviews/:softwareId', (req, res) => {
     });
 });
 
+// Admin reply එක update කිරීමට
+app.put('/api/reviews/reply/:id', async (req, res) => {
+    const { id } = req.params;
+    const { replyText } = req.body;
+    const replyDate = new Date();
+
+    const sql = "UPDATE reviews SET reply_text = ?, reply_date = ? WHERE id = ?";
+    
+    db.query(sql, [replyText, replyDate, id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: "Reply added successfully!" });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
