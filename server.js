@@ -157,7 +157,18 @@ app.post('/api/login', (req, res) => {
 
 // 1. මේක තමයි Dashboard එකට ඕන කරන එක (වැදගත්ම එක)
 app.get('/api/software/all', (req, res) => {
-    const query = `SELECT * FROM software ORDER BY name ASC`;
+    // JOIN එකක් පාවිච්චි කරලා reviews table එකෙන් ratings ටික මෙතනටම ගත්තා
+    const query = `
+        SELECT 
+            s.*, 
+            COUNT(r.id) AS reviewCount, 
+            IFNULL(AVG(r.rating), 0) AS averageRating 
+        FROM software s
+        LEFT JOIN reviews r ON s.id = r.softwareId
+        GROUP BY s.id
+        ORDER BY s.name ASC
+    `;
+
     db.query(query, (err, results) => {
         if (err) {
             console.error("❌ Software fetch error:", err);
