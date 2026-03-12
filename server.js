@@ -108,6 +108,8 @@ function generateLicenseKey() {
 // --- UPDATED REGISTER API ---
 app.post('/api/register', (req, res) => {
     const { fullName, email, phone, nic, address, companyName, password } = req.body;
+    
+    // ID එකක් හදනවා
     const userId = 'user_' + Date.now();
     const licenseId = 'lic_' + Date.now();
     
@@ -119,38 +121,44 @@ app.post('/api/register', (req, res) => {
     expiryDate.setFullYear(expiryDate.getFullYear() + 1);
     const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' ');
 
-    // SQL - මුලින්ම යූසර්ව සේව් කරනවා
-    const userQuery = `INSERT INTO users (id, fullName, email, phone, nic, address, companyName, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client')`;
+    // --- SQL UPDATE: User table එකේ licenseKey column එකටත් data දානවා ---
+    const userQuery = `INSERT INTO users 
+        (id, fullName, email, phone, nic, address, companyName, password, role, licenseKey) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client', ?)`;
     
-    db.query(userQuery, [userId, fullName, email, phone, nic, address, companyName, password], (err, result) => {
+    db.query(userQuery, [userId, fullName, email, phone, nic, address, companyName, password, finalKey], (err, result) => {
         if (err) {
             console.error("❌ SQL User Error:", err.message);
             return res.status(500).json({ success: false, message: err.message });
         }
 
-        // 3. යූසර් සාර්ථකව සේව් වුණාට පස්සේ එයාට අදාළ ලයිසන් එක සේව් කරනවා
-        // softwareId එක දැනට NULL හෝ 'general' කියලා දාන්න පුළුවන් යූසර් තවම මුකුත් මිලදී ගෙන නැති නිසා
+        // 3. කලින් තිබ්බ විදිහටම licenses table එකෙත් record එක හදනවා (Logic එක ආරක්ෂා කර ගැනීමට)
         const licenseQuery = `INSERT INTO licenses 
             (id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations) 
             VALUES (?, NULL, ?, ?, 'active', NOW(), ?, 1, 0)`;
 
         db.query(licenseQuery, [licenseId, userId, finalKey, formattedExpiry], async (licErr) => {
             if (licErr) {
-                console.error("❌ SQL License Error:", licErr.message);
-                // යූසර් හැදුණත් ලයිසන් එකේ අවුලක් නම් දැනුම් දෙනවා
+                console.error("❌ SQL License Table Error:", licErr.message);
+                // මෙතන error එකක් ආවත් user හැදිලා නිසා ලොකු අවුලක් වෙන්නේ නැහැ
             }
 
-            // 4. --- Welcome Email එක යවනවා (License Key එකත් එක්කම) ---
-            await sendEmailViaScript({
-                type: 'welcome',
-                email: email,
-                fullName: fullName,
-                licenseKey: finalKey // මෙන්න කී එක Welcome Email එකට යැව්වා
-            });
+            // 4. Welcome Email එක යවනවා
+            try {
+                await sendEmailViaScript({
+                    type: 'welcome',
+                    email: email,
+                    fullName: fullName,
+                    licenseKey: finalKey 
+                });
+            } catch (emailErr) {
+                console.error("❌ Welcome Email Failed:", emailErr);
+            }
 
+            // අවසාන ප්‍රතිචාරය
             res.json({ 
                 success: true, 
-                message: 'Registration successful! License key sent to email.',
+                message: 'Registration successful! License key generated and saved.',
                 licenseKey: finalKey 
             });
         });
