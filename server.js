@@ -222,11 +222,11 @@ app.get('/api/software', (req, res) => {
     });
 });
 
-// 3. එක සොෆ්ට්වෙයාර් එකක් ID එකෙන් ගන්න එක (මේක අන්තිමට තියෙන්න ඕනේ)
+// 3. එක සොෆ්ට්වෙයාර් එකක් ID එකෙන් ගැනීම
 app.get('/api/software/:id', (req, res) => {
     const { id } = req.params;
 
-    // SQL Query එක: software සහ reviews ටේබල් දෙක JOIN කරලා සාමාන්‍යය ගණනය කරනවා
+    // අලුත් structure එකට අනුව SELECT query එක (s.* මගින් සියලුම අලුත් columns ලැබේ)
     const query = `
         SELECT 
             s.*, 
@@ -255,32 +255,40 @@ app.get('/api/software/:id', (req, res) => {
         }
 
         // සාර්ථකව දත්ත ලැබුණාම response එක යවනවා
-        // මෙහිදී averageRating එක decimal (දශම) අගයක් ලෙස ලැබේ
         res.json(results[0]);
     });
 });
 
-// 4. Add New Software
+// 4. Add New Software (අලුත් Table Structure එකට අනුව)
 app.post('/api/software', (req, res) => {
-    // Firebase වලට අදාළ 'requiresFirebase' මෙතනින් අයින් කළා
     const { 
-        name, description, price, version, category, 
-        imageUrl, systemRequirements, isFree, downloadUrl, 
-        mobileAppUrl, extraLink, features 
+        name, productSlug, description, price, version, category, 
+        imageUrl, systemRequirements, isFree, isActive, features, productLinks 
     } = req.body;
 
-    // Database එකේ තියෙන columns 12 ට ගැලපෙන SQL එක
+    // Database එකේ අලුත් columns (productSlug, productLinks) ඇතුළත් SQL Query එක
     const query = `INSERT INTO software 
-    (name, description, price, version, category, imageUrl, systemRequirements, isFree, downloadUrl, mobileAppUrl, extraLink, features, downloadCount) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`;
+    (name, productSlug, description, price, version, category, imageUrl, systemRequirements, isFree, isActive, features, productLinks) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
-    // Features ටික array එකක් විදිහට ආවොත් ඒක string එකක් කරලා සේව් කරනවා
+    // Array විදිහට එන දත්ත JSON string බවට පත් කිරීම
     const featuresData = Array.isArray(features) ? JSON.stringify(features) : features;
+    const productLinksData = Array.isArray(productLinks) || typeof productLinks === 'object' 
+                             ? JSON.stringify(productLinks) : productLinks;
 
     db.query(query, [
-        name, description, price, version, category, 
-        imageUrl, systemRequirements, isFree ? 1 : 0, 
-        downloadUrl, mobileAppUrl, extraLink, featuresData
+        name, 
+        productSlug, 
+        description, 
+        price, 
+        version, 
+        category, 
+        imageUrl, 
+        systemRequirements, 
+        isFree ? 1 : 0, 
+        isActive ? 1 : 0, 
+        featuresData, 
+        productLinksData
     ], (err, result) => {
         if (err) {
             console.error("❌ SQL Error:", err.message);
@@ -294,23 +302,34 @@ app.post('/api/software', (req, res) => {
 app.put('/api/software/:id', (req, res) => {
     const { id } = req.params;
     const { 
-        name, description, price, version, category, 
-        imageUrl, systemRequirements, isFree, downloadUrl, 
-        mobileAppUrl, extraLink, features 
+        name, productSlug, description, price, version, category, 
+        imageUrl, systemRequirements, isFree, isActive, features, productLinks 
     } = req.body;
 
+    // Update query එකත් අලුත් columns වලට ගැලපෙන සේ වෙනස් කරන ලදී
     const query = `UPDATE software SET 
-    name=?, description=?, price=?, version=?, category=?, 
-    imageUrl=?, systemRequirements=?, isFree=?, downloadUrl=?, 
-    mobileAppUrl=?, extraLink=?, features=? 
+    name=?, productSlug=?, description=?, price=?, version=?, category=?, 
+    imageUrl=?, systemRequirements=?, isFree=?, isActive=?, features=?, productLinks=? 
     WHERE id=?`;
 
     const featuresData = Array.isArray(features) ? JSON.stringify(features) : features;
+    const productLinksData = Array.isArray(productLinks) || typeof productLinks === 'object' 
+                             ? JSON.stringify(productLinks) : productLinks;
 
     db.query(query, [
-        name, description, price, version, category, 
-        imageUrl, systemRequirements, isFree ? 1 : 0, 
-        downloadUrl, mobileAppUrl, extraLink, featuresData, id
+        name, 
+        productSlug, 
+        description, 
+        price, 
+        version, 
+        category, 
+        imageUrl, 
+        systemRequirements, 
+        isFree ? 1 : 0, 
+        isActive ? 1 : 0, 
+        featuresData, 
+        productLinksData, 
+        id
     ], (err, result) => {
         if (err) {
             console.error("❌ SQL Error:", err.message);
