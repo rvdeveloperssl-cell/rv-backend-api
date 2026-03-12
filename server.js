@@ -659,9 +659,7 @@ app.put('/api/admin/clients/:id/verify', (req, res) => {
 app.get('/api/licenses/user/:userId', (req, res) => {
     const { userId } = req.params;
     
-    // මෙතනදී අපි 'licenses' ටේබල් එක 'software' ටේබල් එක සමඟ JOIN කරනවා
-    // එවිට පරණ විදිහටම softwareName සහ description ලැබෙන අතරම, 
-    // අලුතින් licenseKey, expiresAt, සහ activations දත්තත් ලැබේ.
+    // JOIN වෙනුවට LEFT JOIN පාවිච්චි කරන්න
     const query = `
         SELECT 
             l.*, 
@@ -669,7 +667,7 @@ app.get('/api/licenses/user/:userId', (req, res) => {
             s.description,
             s.imageUrl
         FROM licenses l
-        JOIN software s ON l.softwareId = s.id 
+        LEFT JOIN software s ON l.softwareId = s.id  
         WHERE l.userId = ? AND l.status = 'active'
         ORDER BY l.createdAt DESC`;
 
@@ -678,8 +676,6 @@ app.get('/api/licenses/user/:userId', (req, res) => {
             console.error("❌ Fetch Licenses Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
-        
-        // Frontend එකට සියලුම දත්ත (License Key, Expiry, etc.) සහිත array එක යවයි
         res.json(results);
     });
 });
