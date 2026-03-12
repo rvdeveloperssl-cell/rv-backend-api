@@ -438,55 +438,73 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
 
     console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
 
-    // 1. Purchase එකේ විස්තර සහ User ගේ දැනට තියෙන License Key එක JOIN එකක් හරහා ලබා ගැනීම
-    const getPurchaseAndUserKey = `
-        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, l.licenseKey
+    // 1. Purchase, User Key සහ Software Slug එක ලබා ගැනීම
+    const getPurchaseDetails = `
+        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, s.slug as softwareSlug, l.licenseKey, l.allowed_apps
         FROM purchases p 
         JOIN users u ON p.userId = u.id 
         JOIN software s ON p.softwareId = s.id 
         LEFT JOIN licenses l ON p.userId = l.userId
         WHERE p.id = ?`;
 
-    db.query(getPurchaseAndUserKey, [purchaseId], (err, rows) => {
+    db.query(getPurchaseDetails, [purchaseId], (err, rows) => {
         if (err || rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Purchase not found' });
         }
 
-        const { userId, softwareId, email, fullName, softwareName, licenseKey } = rows[0];
+        const { userId, email, fullName, softwareName, softwareSlug, licenseKey, allowed_apps } = rows[0];
 
-        // 2. දැන් කරන්නේ Purchase එක Update කරන එක විතරයි. 
-        // අලුතින් License එකක් හදන්නේ නැති නිසා licenseId එක NULL හෝ පරණ එකම තියන්න පුළුවන්.
-        const updatePurchase = `
-            UPDATE purchases 
-            SET paymentStatus = 'verified', 
-                verifiedAt = NOW(), 
-                verifiedBy = ? 
-            WHERE id = ?`;
+        // 2. Allowed Apps ලැයිස්තුව Update කිරීම
+        let apps = [];
+        try {
+            // දැනට apps තියෙනවා නම් ඒවා parse කරන්න, නැත්නම් හිස් array එකක් ගන්න
+            apps = JSON.parse(allowed_apps || "[]");
+        } catch (e) {
+            apps = [];
+        }
 
-        db.query(updatePurchase, [adminId, purchaseId], async (err) => {
+        // අලුත් සොෆ්ට්වෙයාර් එක ලිස්ට් එකේ නැත්නම් පමණක් එකතු කරන්න
+        if (!apps.includes(softwareSlug)) {
+            apps.push(softwareSlug);
+        }
+
+        // 3. Database Updates (Purchase status සහ License apps)
+        const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
+        const updateLicenseApps = `UPDATE licenses SET allowed_apps = ? WHERE userId = ?`;
+
+        // මුලින් Purchase එක update කරනවා
+        db.query(updatePurchase, [adminId, purchaseId], (err) => {
             if (err) {
                 console.error("❌ Purchase Update Error:", err.message);
                 return res.status(500).json({ success: false, message: 'Update error' });
             }
 
-            // 3. Google Script එකට Email එකක් යවනවා (Verification එක සාර්ථකයි කියලා දැනුම් දෙන්න)
-            // මෙතනදී අපි යවන්නේ යූසර්ට දැනටමත් තියෙන licenseKey එකයි.
-            try {
-                await sendEmailViaScript({
-                    type: 'purchase_verified', // Type එක වෙනස් කළා අලුත් Template එකකට ගැලපෙන්න
-                    email: email,
-                    fullName: fullName,
-                    softwareName: softwareName,
-                    licenseKey: licenseKey // User ගේ දැනට තියෙන Account Key එක
-                });
-            } catch (emailErr) {
-                console.error("❌ Email Sending Failed:", emailErr);
-            }
+            // පසුව License එකේ allowed_apps ටික update කරනවා
+            db.query(updateLicenseApps, [JSON.stringify(apps), userId], async (err) => {
+                if (err) {
+                    console.error("❌ License Update Error:", err.message);
+                    // මෙතනදී purchase එක update වී ඇති නිසා error එකක් throw නොකර ඉදිරියට යා හැකියි, 
+                    // නමුත් log කිරීම වැදගත්.
+                }
 
-            res.json({ 
-                success: true, 
-                message: 'Payment verified successfully!',
-                userLicenseKey: licenseKey 
+                // 4. Email එක යැවීම
+                try {
+                    await sendEmailViaScript({
+                        type: 'purchase_verified',
+                        email: email,
+                        fullName: fullName,
+                        softwareName: softwareName,
+                        licenseKey: licenseKey 
+                    });
+                } catch (emailErr) {
+                    console.error("❌ Email Sending Failed:", emailErr);
+                }
+
+                res.json({ 
+                    success: true, 
+                    message: 'Payment verified and License updated!',
+                    userLicenseKey: licenseKey 
+                });
             });
         });
     });
