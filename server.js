@@ -383,70 +383,55 @@ app.post('/api/admin/verify-payment/:id', (req, res) => {
 
     console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
 
-    // 1. මුලින්ම පරණ Purchase එකේ දත්ත (userId, softwareId) සහ User Email එක හොයාගන්නවා
-    // අපි මෙතන JOIN එකක් පාවිච්චි කරනවා Email එක සහ Software Name එක එකපාරම ගන්න
-    const getPurchaseData = `
-        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName 
+    // 1. Purchase එකේ විස්තර සහ User ගේ දැනට තියෙන License Key එක JOIN එකක් හරහා ලබා ගැනීම
+    const getPurchaseAndUserKey = `
+        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, l.licenseKey
         FROM purchases p 
         JOIN users u ON p.userId = u.id 
         JOIN software s ON p.softwareId = s.id 
+        LEFT JOIN licenses l ON p.userId = l.userId
         WHERE p.id = ?`;
 
-    db.query(getPurchaseData, [purchaseId], (err, rows) => {
+    db.query(getPurchaseAndUserKey, [purchaseId], (err, rows) => {
         if (err || rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Purchase not found' });
         }
 
-        const { userId, softwareId, email, fullName, softwareName } = rows[0];
+        const { userId, softwareId, email, fullName, softwareName, licenseKey } = rows[0];
 
-        // 2. License Key එක හදනවා (ඔයාගේ මුල් code එකමයි)
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-        const part1 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
-        const part2 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
-        const finalKey = `RVQ-${part1}-${part2}`;
+        // 2. දැන් කරන්නේ Purchase එක Update කරන එක විතරයි. 
+        // අලුතින් License එකක් හදන්නේ නැති නිසා licenseId එක NULL හෝ පරණ එකම තියන්න පුළුවන්.
+        const updatePurchase = `
+            UPDATE purchases 
+            SET paymentStatus = 'verified', 
+                verifiedAt = NOW(), 
+                verifiedBy = ? 
+            WHERE id = ?`;
 
-        // 3. Expiry Date එක හදනවා (අද සිට වසර 1ක් ඉදිරියට)
-        const expiryDate = new Date();
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-        const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' '); 
-
-        const licenseId = 'lic_' + Date.now();
-
-        // 4. මුලින්ම License එක සේව් කරනවා
-        const insertLicense = `INSERT INTO licenses 
-            (id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations) 
-            VALUES (?, ?, ?, ?, 'active', NOW(), ?, 1, 0)`;
-
-        db.query(insertLicense, [licenseId, softwareId, userId, finalKey, formattedExpiry], (err) => {
+        db.query(updatePurchase, [adminId, purchaseId], async (err) => {
             if (err) {
-                console.error("❌ License Save Error:", err.message);
-                return res.status(500).json({ success: false, message: 'Failed to generate license' });
+                console.error("❌ Purchase Update Error:", err.message);
+                return res.status(500).json({ success: false, message: 'Update error' });
             }
 
-            // 5. දැන් Purchase එක Update කරනවා
-            const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ?, licenseId = ? WHERE id = ?`;
-
-            db.query(updatePurchase, [adminId, licenseId, purchaseId], async (err) => {
-                if (err) {
-                    console.error("❌ Purchase Update Error:", err.message);
-                    return res.status(500).json({ success: false, message: 'Update error' });
-                }
-
-                // --- අලුතින් එකතු කළ කොටස: Purchase Email එක යැවීම ---
-                // License එක සහ Purchase එක DB එකේ update වුණාට පස්සේ මේක ක්‍රියාත්මක වෙනවා
+            // 3. Google Script එකට Email එකක් යවනවා (Verification එක සාර්ථකයි කියලා දැනුම් දෙන්න)
+            // මෙතනදී අපි යවන්නේ යූසර්ට දැනටමත් තියෙන licenseKey එකයි.
+            try {
                 await sendEmailViaScript({
-                    type: 'purchase',
+                    type: 'purchase_verified', // Type එක වෙනස් කළා අලුත් Template එකකට ගැලපෙන්න
                     email: email,
                     fullName: fullName,
                     softwareName: softwareName,
-                    licenseKey: finalKey
+                    licenseKey: licenseKey // User ගේ දැනට තියෙන Account Key එක
                 });
+            } catch (emailErr) {
+                console.error("❌ Email Sending Failed:", emailErr);
+            }
 
-                res.json({ 
-                    success: true, 
-                    message: 'Payment verified and License generated!',
-                    licenseKey: finalKey 
-                });
+            res.json({ 
+                success: true, 
+                message: 'Payment verified successfully!',
+                userLicenseKey: licenseKey 
             });
         });
     });
