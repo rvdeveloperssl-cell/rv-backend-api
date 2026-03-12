@@ -440,7 +440,7 @@ app.post('/api/admin/verify-payment/:purchaseId', (req, res) => {
 
     // 1. Purchase, User Key සහ Software Slug එක ලබා ගැනීම
     const getPurchaseDetails = `
-        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, s.slug as softwareSlug, l.licenseKey, l.allowed_apps
+        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, s.productSlug as softwareSlug, l.licenseKey, l.allowed_apps
         FROM purchases p 
         JOIN users u ON p.userId = u.id 
         JOIN software s ON p.softwareId = s.id 
