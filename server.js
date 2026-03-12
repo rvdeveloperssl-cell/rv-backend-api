@@ -96,28 +96,64 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 app.use('/uploads', express.static('uploads'));
 
-// Register API
+// --- LICENSE GENERATOR FUNCTION ---
+// මේක function එකක් විදිහට ගත්තා ඕනෑම තැනක පාවිච්චි කරන්න පුළුවන් වෙන්න
+function generateLicenseKey() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const part1 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const part2 = Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `RVQ-${part1}-${part2}`;
+}
+
+// --- UPDATED REGISTER API ---
 app.post('/api/register', (req, res) => {
     const { fullName, email, phone, nic, address, companyName, password } = req.body;
-    const id = 'user_' + Date.now();
-
-    const query = `INSERT INTO users (id, fullName, email, phone, nic, address, companyName, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client')`;
+    const userId = 'user_' + Date.now();
+    const licenseId = 'lic_' + Date.now();
     
-    db.query(query, [id, fullName, email, phone, nic, address, companyName, password], async (err, result) => {
+    // 1. අලුත් ලයිසන් කී එකක් හදනවා
+    const finalKey = generateLicenseKey();
+
+    // 2. වසරක Expiry Date එකක් හදනවා
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    const formattedExpiry = expiryDate.toISOString().slice(0, 19).replace('T', ' ');
+
+    // SQL - මුලින්ම යූසර්ව සේව් කරනවා
+    const userQuery = `INSERT INTO users (id, fullName, email, phone, nic, address, companyName, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client')`;
+    
+    db.query(userQuery, [userId, fullName, email, phone, nic, address, companyName, password], (err, result) => {
         if (err) {
-            console.error("❌ SQL Error:", err.message);
+            console.error("❌ SQL User Error:", err.message);
             return res.status(500).json({ success: false, message: err.message });
         }
 
-        // --- වැදගත්ම කොටස: User Register වුණාම Welcome Email එක යවනවා ---
-        // මෙතනදී type එක 'welcome' විදිහට අපි Google Script එකට යවනවා
-        await sendEmailViaScript({
-            type: 'welcome',
-            email: email,
-            fullName: fullName
-        });
+        // 3. යූසර් සාර්ථකව සේව් වුණාට පස්සේ එයාට අදාළ ලයිසන් එක සේව් කරනවා
+        // softwareId එක දැනට NULL හෝ 'general' කියලා දාන්න පුළුවන් යූසර් තවම මුකුත් මිලදී ගෙන නැති නිසා
+        const licenseQuery = `INSERT INTO licenses 
+            (id, softwareId, userId, licenseKey, status, createdAt, expiresAt, maxActivations, currentActivations) 
+            VALUES (?, NULL, ?, ?, 'active', NOW(), ?, 1, 0)`;
 
-        res.json({ success: true, message: 'User registered successfully and Welcome Email sent!' });
+        db.query(licenseQuery, [licenseId, userId, finalKey, formattedExpiry], async (licErr) => {
+            if (licErr) {
+                console.error("❌ SQL License Error:", licErr.message);
+                // යූසර් හැදුණත් ලයිසන් එකේ අවුලක් නම් දැනුම් දෙනවා
+            }
+
+            // 4. --- Welcome Email එක යවනවා (License Key එකත් එක්කම) ---
+            await sendEmailViaScript({
+                type: 'welcome',
+                email: email,
+                fullName: fullName,
+                licenseKey: finalKey // මෙන්න කී එක Welcome Email එකට යැව්වා
+            });
+
+            res.json({ 
+                success: true, 
+                message: 'Registration successful! License key sent to email.',
+                licenseKey: finalKey 
+            });
+        });
     });
 });
 
