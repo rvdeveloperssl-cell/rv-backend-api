@@ -399,10 +399,10 @@ app.post('/api/payments/bank-transfer', (req, res) => {
         // 5. Purchases table එකට දත්ත ඇතුළත් කිරීම
         // මෙහිදී අපි purchaseId එකම Primary ID එක ලෙස පාවිච්චි කරනවා
         const query = `INSERT INTO purchases 
-            (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt) 
-            VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW())`;
+    (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt, invoiceId) 
+    VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW(), ?)`;
 
-        db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl], (err, result) => {
+db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl, invoiceNo], (err, result) => {
             if (err) {
                 console.error("❌ Insert Error:", err);
                 return res.status(500).json({ success: false, message: err.message });
@@ -444,11 +444,11 @@ app.post('/api/admin/verify-payment/:purchaseId', (req, res) => {
     const { purchaseId } = req.params;
     const { adminId } = req.body;
 
-    console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
-
-    // 1. Purchase, User Key සහ Software Slug එක ලබා ගැනීම
+    // 1. කලින්ට වඩා වැඩිපුර දත්ත ප්‍රමාණයක් (softwareId, licenseId) මෙතනින් ගන්නවා
     const getPurchaseDetails = `
-        SELECT p.userId, p.softwareId, u.email, u.fullName, s.name as softwareName, s.productSlug as softwareSlug, l.licenseKey, l.allowed_apps
+        SELECT p.userId, p.softwareId, p.licenseId, u.email, u.fullName, 
+               s.name as softwareName, s.productSlug as softwareSlug, 
+               l.licenseKey, l.allowed_apps
         FROM purchases p 
         JOIN users u ON p.userId = u.id 
         JOIN software s ON p.softwareId = s.id 
@@ -460,42 +460,42 @@ app.post('/api/admin/verify-payment/:purchaseId', (req, res) => {
             return res.status(404).json({ success: false, message: 'Purchase not found' });
         }
 
-        const { userId, email, fullName, softwareName, softwareSlug, licenseKey, allowed_apps } = rows[0];
+        const { userId, softwareId, email, fullName, softwareName, softwareSlug, licenseKey, allowed_apps } = rows[0];
 
-        // 2. Allowed Apps ලැයිස්තුව Update කිරීම
+        // 2. Allowed Apps update logic
         let apps = [];
         try {
-            // දැනට apps තියෙනවා නම් ඒවා parse කරන්න, නැත්නම් හිස් array එකක් ගන්න
             apps = JSON.parse(allowed_apps || "[]");
         } catch (e) {
             apps = [];
         }
-
-        // අලුත් සොෆ්ට්වෙයාර් එක ලිස්ට් එකේ නැත්නම් පමණක් එකතු කරන්න
         if (!apps.includes(softwareSlug)) {
             apps.push(softwareSlug);
         }
 
-        // 3. Database Updates (Purchase status සහ License apps)
+        // 3. TRANSACTION එකක් විදිහට මේ Updates දෙකම කරනවා නම් වඩාත් ආරක්ෂිතයි
+        // නමුත් දැනට සරලව SQL Queries දෙක දාන්නම්:
+
+        // Purchase Status එක 'verified' කරනවා
         const updatePurchase = `UPDATE purchases SET paymentStatus = 'verified', verifiedAt = NOW(), verifiedBy = ? WHERE id = ?`;
-        const updateLicenseApps = `UPDATE licenses SET allowed_apps = ? WHERE userId = ?`;
 
-        // මුලින් Purchase එක update කරනවා
         db.query(updatePurchase, [adminId, purchaseId], (err) => {
-            if (err) {
-                console.error("❌ Purchase Update Error:", err.message);
-                return res.status(500).json({ success: false, message: 'Update error' });
-            }
+            if (err) return res.status(500).json({ success: false, message: 'Purchase update failed' });
 
-            // පසුව License එකේ allowed_apps ටික update කරනවා
-            db.query(updateLicenseApps, [JSON.stringify(apps), userId], async (err) => {
-                if (err) {
-                    console.error("❌ License Update Error:", err.message);
-                    // මෙතනදී purchase එක update වී ඇති නිසා error එකක් throw නොකර ඉදිරියට යා හැකියි, 
-                    // නමුත් log කිරීම වැදගත්.
+            // 4. වැදගත්ම තැන: Licenses Table එකේ softwareId එකත් මෙතනදි Update කරනවා (NULL වෙන්නේ නැති වෙන්න)
+            const updateLicense = `
+                UPDATE licenses 
+                SET allowed_apps = ?, 
+                    softwareId = ?, 
+                    status = 'active' 
+                WHERE userId = ?`;
+
+            db.query(updateLicense, [JSON.stringify(apps), softwareId, userId], async (licErr) => {
+                if (licErr) {
+                    console.error("❌ License Sync Error:", licErr.message);
                 }
 
-                // 4. Email එක යැවීම
+                // 5. Email එක යැවීම
                 try {
                     await sendEmailViaScript({
                         type: 'purchase_verified',
@@ -510,7 +510,7 @@ app.post('/api/admin/verify-payment/:purchaseId', (req, res) => {
 
                 res.json({ 
                     success: true, 
-                    message: 'Payment verified and License updated!',
+                    message: 'Payment verified and License linked successfully!',
                     userLicenseKey: licenseKey 
                 });
             });
