@@ -432,7 +432,7 @@ app.get('/api/admin/purchases/all', (req, res) => {
 });
 
 // 3. Admin payment එක verify කිරීම
-app.post('/api/admin/verify-payment/:id', (req, res) => {
+app.get('/api/admin/verify-payment/:id', (req, res) => {
     const purchaseId = req.params.id;
     const { adminId } = req.body;
 
@@ -759,6 +759,21 @@ app.put('/api/reviews/reply/:id', async (req, res) => {
     db.query(sql, [replyText, replyDate, id], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: "Reply added successfully!" });
+    });
+});
+
+// Admin Dashboard එකට ඕන කරන Pending Reviews ටික ගැනීම
+app.get('/api/admin/reviews/pending', (req, res) => {
+    const query = `
+        SELECT r.*, s.name as softwareName 
+        FROM reviews r 
+        JOIN software s ON r.softwareId = s.id 
+        WHERE r.reply_text IS NULL OR r.reply_text = ''
+        ORDER BY r.createdAt DESC`;
+    
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
     });
 });
 
