@@ -432,8 +432,8 @@ app.get('/api/admin/purchases/all', (req, res) => {
 });
 
 // 3. Admin payment එක verify කිරීම
-app.get('/api/admin/verify-payment/:id', (req, res) => {
-    const purchaseId = req.params.id;
+app.post('/api/admin/verify-payment/:purchaseId', (req, res) => {
+    const { purchaseId } = req.params;
     const { adminId } = req.body;
 
     console.log("Verifying Purchase:", purchaseId, "By Admin:", adminId);
