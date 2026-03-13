@@ -814,5 +814,183 @@ app.get('/api/admin/reviews/pending', (req, res) => {
     });
 });
 
+// License Verification Endpoint (POS Software එක open වෙද්දී call වේ)
+app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
+    const { licenseKey } = req.params;
+    
+    const query = `
+        SELECT l.*, u.fullName, u.email 
+        FROM pos_licenses l
+        LEFT JOIN users u ON l.userId = u.id
+        WHERE l.licenseKey = ?
+    `;
+    
+    db.query(query, [licenseKey], (err, results) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        
+        if (results.length === 0) {
+            return res.status(404).json({ success: false, message: 'Invalid License Key' });
+        }
+        
+        const license = results[0];
+        
+        // Check expiry
+        if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
+            return res.status(403).json({ success: false, message: 'License Expired', status: 'expired' });
+        }
+        
+        if (license.status === 'blocked') {
+            return res.status(403).json({ success: false, message: 'License Blocked', status: 'blocked' });
+        }
+        
+        res.json({
+            success: true,
+            licenseKey: license.licenseKey,
+            status: license.status,
+            pack: license.pack, // 'Premium' ද කියා පරීක්ෂා කරයි
+            businessName: license.businessName,
+            businessType: license.businessType,
+            branch: license.branch,
+            branchLimit: license.branchLimit,
+            botToken: license.botToken,
+            adminChatId: license.adminChatId,
+            firebaseConfig: {
+                apiKey: license.firebaseApiKey,
+                databaseURL: license.firebaseDbUrl
+            }
+        });
+    });
+});
+
+// Get all data for a license (Inventory, Users, etc)
+app.get('/api/pos/data/:licenseKey', (req, res) => {
+    const { licenseKey } = req.params;
+    
+    const data = {};
+    
+    // Fetch all tables
+    const queries = [
+        { key: 'inventory', sql: 'SELECT * FROM pos_inventory WHERE licenseKey = ?' },
+        { key: 'users', sql: 'SELECT * FROM pos_users WHERE licenseKey = ?' },
+        { key: 'categories', sql: 'SELECT * FROM pos_categories WHERE licenseKey = ?' },
+        { key: 'sales', sql: 'SELECT * FROM pos_sales WHERE licenseKey = ? ORDER BY ts DESC LIMIT 100' },
+        { key: 'suppliers', sql: 'SELECT * FROM pos_suppliers WHERE licenseKey = ?' },
+        { key: 'pending_orders', sql: 'SELECT * FROM pos_pending_orders WHERE licenseKey = ?' },
+        { key: 'order_history', sql: 'SELECT * FROM pos_order_history WHERE licenseKey = ?' },
+        { key: 'expenses', sql: 'SELECT * FROM pos_expenses WHERE licenseKey = ?' }
+    ];
+    
+    let completed = 0;
+    queries.forEach(q => {
+        db.query(q.sql, [licenseKey], (err, results) => {
+            data[q.key] = results || [];
+            completed++;
+            if (completed === queries.length) {
+                res.json({ success: true, data });
+            }
+        });
+    });
+});
+
+// Sync data from POS to MySQL
+app.post('/api/pos/sync/:licenseKey', (req, res) => {
+    const { licenseKey } = req.params;
+    const { table, data } = req.body; // table: 'inventory', 'sales', etc
+    
+    if (!table || !data) {
+        return res.status(400).json({ success: false, message: 'Missing data' });
+    }
+    
+    // Delete existing and insert new (simple sync strategy)
+    const deleteSql = `DELETE FROM pos_${table} WHERE licenseKey = ?`;
+    
+    db.query(deleteSql, [licenseKey], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        if (data.length === 0) {
+            return res.json({ success: true, message: 'Synced (empty)' });
+        }
+        
+        // Insert new data
+        const columns = Object.keys(data[0]).filter(col => col !== 'id');
+        const placeholders = columns.map(() => '?').join(',');
+        const insertSql = `INSERT INTO pos_${table} (licenseKey, ${columns.join(',')}) VALUES (?, ${placeholders})`;
+        
+        let inserted = 0;
+        let errors = [];
+        
+        data.forEach((row, index) => {
+            const values = [licenseKey, ...columns.map(col => row[col])];
+            db.query(insertSql, values, (err) => {
+                if (err) errors.push({ row: index, error: err.message });
+                inserted++;
+                if (inserted === data.length) {
+                    res.json({ 
+                        success: true, 
+                        message: `Synced ${data.length} records`,
+                        errors: errors.length > 0 ? errors : undefined
+                    });
+                }
+            });
+        });
+    });
+});
+
+// Update single record
+app.post('/api/pos/update/:licenseKey/:table', (req, res) => {
+    const { licenseKey, table } = req.params;
+    const { id, ...data } = req.body;
+    
+    const allowedTables = ['inventory', 'users', 'categories', 'sales', 'suppliers', 'pending_orders', 'order_history', 'expenses'];
+    if (!allowedTables.includes(table)) {
+        return res.status(400).json({ error: 'Invalid table' });
+    }
+    
+    const setClause = Object.keys(data).map(key => `${key} = ?`).join(', ');
+    const values = [...Object.values(data), licenseKey, id];
+    
+    const sql = `UPDATE pos_${table} SET ${setClause} WHERE licenseKey = ? AND id = ?`;
+    
+    db.query(sql, values, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, affected: result.affectedRows });
+    });
+});
+
+// Insert single record
+app.post('/api/pos/insert/:licenseKey/:table', (req, res) => {
+    const { licenseKey, table } = req.params;
+    const data = req.body;
+    
+    const allowedTables = ['inventory', 'users', 'categories', 'sales', 'suppliers', 'pending_orders', 'order_history', 'expenses', 'logs', 'attendance'];
+    if (!allowedTables.includes(table)) {
+        return res.status(400).json({ error: 'Invalid table' });
+    }
+    
+    const columns = Object.keys(data);
+    const placeholders = columns.map(() => '?').join(',');
+    const values = [licenseKey, ...Object.values(data)];
+    
+    const sql = `INSERT INTO pos_${table} (licenseKey, ${columns.join(',')}) VALUES (?, ${placeholders})`;
+    
+    db.query(sql, values, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: result.insertId });
+    });
+});
+
+// Delete record
+app.delete('/api/pos/delete/:licenseKey/:table/:id', (req, res) => {
+    const { licenseKey, table, id } = req.params;
+    
+    const sql = `DELETE FROM pos_${table} WHERE licenseKey = ? AND id = ?`;
+    db.query(sql, [licenseKey, id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
