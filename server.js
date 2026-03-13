@@ -381,13 +381,16 @@ app.post('/api/payments/bank-transfer', (req, res) => {
     // පෙන්වීමට පමණක් ලස්සන Invoice අංකයක් (Prefix එකක් සමඟ)
     const invoiceNo = `INV-${timestamp.toString().slice(-8)}`; 
 
-    // 4. User ගේ fullName එක සහ Software එකේ price එක ලබා ගැනීම
+    // 4. User ගේ fullName, Software එකේ price සහ LICENSE ID එක ලබා ගැනීම
+    // මෙතන JOIN එකක් දාලා licenseId එකත් ගන්නවා
     const dataQuery = `
-        SELECT u.fullName, s.price 
-        FROM users u, software s 
-        WHERE u.id = ? AND s.id = ?`;
+        SELECT u.fullName, s.price, l.id as licenseId
+        FROM users u
+        JOIN software s ON s.id = ?
+        LEFT JOIN licenses l ON l.userId = u.id
+        WHERE u.id = ?`;
 
-    db.query(dataQuery, [userId, softwareId], (err, results) => {
+    db.query(dataQuery, [softwareId, userId], (err, results) => {
         if (err || results.length === 0) {
             console.error("❌ DB Error or No results:", err);
             return res.status(500).json({ success: false, message: 'User or Software not found' });
@@ -395,14 +398,15 @@ app.post('/api/payments/bank-transfer', (req, res) => {
 
         const fullName = results[0].fullName;
         const amount = results[0].price;
+        const licenseIdFromDB = results[0].licenseId; // මෙන්න මෙතනට licenseId එක එනවා
 
         // 5. Purchases table එකට දත්ත ඇතුළත් කිරීම
-        // මෙහිදී අපි purchaseId එකම Primary ID එක ලෙස පාවිච්චි කරනවා
+        // මෙහිදී ඔයා ඉල්ලපු විදිහට licenseId එකත් query එකට එකතු කළා
         const query = `INSERT INTO purchases 
-    (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt, invoiceId) 
-    VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW(), ?)`;
+    (id, userId, fullName, softwareId, amount, paymentMethod, paymentStatus, slipUrl, createdAt, invoiceId, licenseId) 
+    VALUES (?, ?, ?, ?, ?, 'bank_transfer', 'pending', ?, NOW(), ?, ?)`;
 
-db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl, invoiceNo], (err, result) => {
+        db.query(query, [purchaseId, userId, fullName, softwareId, amount, slipUrl, invoiceNo, licenseIdFromDB], (err, result) => {
             if (err) {
                 console.error("❌ Insert Error:", err);
                 return res.status(500).json({ success: false, message: err.message });
