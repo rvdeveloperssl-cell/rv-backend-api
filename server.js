@@ -864,29 +864,60 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
 // 2. Setup Data Save Endpoint
 app.post('/api/licenses/setup-save/:licenseKey', (req, res) => {
     const { licenseKey } = req.params;
-    const { businessName, businessType, pack, botToken, adminChatId, phone, address, branch } = req.body;
+    const { businessName, businessType, botToken, adminChatId, phone, address, branch } = req.body;
 
-    // පවතින License එකක් Update කිරීම හෝ අලුතින් ඇතුළත් කිරීම
-    const sql = `
-        INSERT INTO pos_licenses (licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address, branch)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE 
-            businessName = VALUES(businessName),
-            businessType = VALUES(businessType),
-            botToken = VALUES(botToken),
-            adminChatId = VALUES(adminChatId),
-            phone = VALUES(phone),
-            address = VALUES(address),
-            branch = VALUES(branch)
-    `;
+    // පළමුව License එකට අදාළ Software Name එක ලබා ගැනීම සඳහා Query එකක් ලියමු
+    const getSoftwareSql = `
+        SELECT s.softwareName 
+        FROM pos_licenses l 
+        JOIN softwares s ON l.softwareId = s.id 
+        WHERE l.licenseKey = ?`;
 
-    // pack එක null හෝ undefined නම් කලින් තිබූ එකම තැබීමට logic එක බලන්න
-    db.query(sql, [licenseKey, businessName, businessType, pack || 'Basic', botToken, adminChatId, phone, address, branch || 'Main'], (err) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ success: false, error: err.message });
+    db.query(getSoftwareSql, [licenseKey], (err, results) => {
+        if (err || results.length === 0) {
+            return res.status(500).json({ success: false, error: "License or Software not found" });
         }
-        res.json({ success: true, message: 'Setup information saved' });
+
+        const softwareName = results[0].softwareName.toLowerCase();
+        let determinedPack = 'Basic'; // Default
+
+        // Name එකේ තියෙන වචනය අනුව Pack එක තීරණය කිරීම
+        if (softwareName.includes('premium')) determinedPack = 'Premium';
+        else if (softwareName.includes('advance')) determinedPack = 'Advance';
+        else if (softwareName.includes('basic')) determinedPack = 'Basic';
+
+        // දැන් Setup දත්ත Update කිරීම
+        const updateSql = `
+            UPDATE pos_licenses 
+            SET businessName = ?, 
+                businessType = ?, 
+                pack = ?, 
+                botToken = ?, 
+                adminChatId = ?, 
+                phone = ?, 
+                address = ?, 
+                branch = ?
+            WHERE licenseKey = ?`;
+
+        const values = [
+            businessName, 
+            businessType, 
+            determinedPack, 
+            botToken, 
+            adminChatId, 
+            phone, 
+            address, 
+            branch || 'Main', 
+            licenseKey
+        ];
+
+        db.query(updateSql, values, (err) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ success: false, error: err.message });
+            }
+            res.json({ success: true, message: 'Setup saved and Pack identified as ' + determinedPack });
+        });
     });
 });
 
