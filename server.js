@@ -671,15 +671,20 @@ app.put('/api/admin/clients/:id/verify', (req, res) => {
 app.get('/api/licenses/user/:userId', (req, res) => {
     const { userId } = req.params;
     
+    // Query එකේදී අපිට අවශ්‍ය columns විතරක් තෝරා ගමු
     const query = `
         SELECT 
-            l.*, 
+            l.id as licenseId,
+            l.licenseKey,
+            l.softwareId,
+            l.status,
+            l.createdAt,
             s.name as softwareName, 
             s.description,
             s.imageUrl,
-            s.productLinks  -- <--- මේක අනිවාර්යයෙන්ම තියෙන්න ඕනේ
+            s.productLinks  -- මෙතන තමයි download links තියෙන්නේ
         FROM licenses l
-        LEFT JOIN software s ON l.softwareId = s.id  
+        INNER JOIN software s ON l.softwareId = s.id  
         WHERE l.userId = ? AND l.status = 'active'
         ORDER BY l.createdAt DESC`;
 
@@ -688,7 +693,27 @@ app.get('/api/licenses/user/:userId', (req, res) => {
             console.error("❌ Fetch Licenses Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
-        res.json(results);
+
+        // 💡 වැදගත්: productLinks String එකක් නම් ඒක JSON එකක් බවට පත් කරන්න ඕනේ
+        const formattedResults = results.map(row => {
+            let parsedLinks = null;
+            try {
+                // database එකෙන් එන්නේ string එකක් නම් parse කරන්න
+                parsedLinks = typeof row.productLinks === 'string' 
+                    ? JSON.parse(row.productLinks) 
+                    : row.productLinks;
+            } catch (e) {
+                console.error("Parsing Error for productLinks:", e);
+                parsedLinks = []; // වැරදුනොත් හිස් list එකක් යවන්න
+            }
+
+            return {
+                ...row,
+                productLinks: parsedLinks
+            };
+        });
+
+        res.json(formattedResults);
     });
 });
 
