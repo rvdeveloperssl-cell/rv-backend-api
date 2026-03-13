@@ -862,25 +862,30 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
 });
 
 // 2. Setup Data Save Endpoint
-app.post('/api/pos/setup-save/:licenseKey', (req, res) => {
+app.post('/api/licenses/setup-save/:licenseKey', (req, res) => {
     const { licenseKey } = req.params;
-    const { businessName, businessType, pack, botToken, adminChatId, phone, address } = req.body;
+    const { businessName, businessType, pack, botToken, adminChatId, phone, address, branch } = req.body;
 
+    // පවතින License එකක් Update කිරීම හෝ අලුතින් ඇතුළත් කිරීම
     const sql = `
-        INSERT INTO pos_licenses (licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pos_licenses (licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address, branch)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE 
             businessName = VALUES(businessName),
             businessType = VALUES(businessType),
-            pack = VALUES(pack),
             botToken = VALUES(botToken),
             adminChatId = VALUES(adminChatId),
             phone = VALUES(phone),
-            address = VALUES(address)
+            address = VALUES(address),
+            branch = VALUES(branch)
     `;
 
-    db.query(sql, [licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address], (err) => {
-        if (err) return res.status(500).json({ success: false, error: err.message });
+    // pack එක null හෝ undefined නම් කලින් තිබූ එකම තැබීමට logic එක බලන්න
+    db.query(sql, [licenseKey, businessName, businessType, pack || 'Basic', botToken, adminChatId, phone, address, branch || 'Main'], (err) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
         res.json({ success: true, message: 'Setup information saved' });
     });
 });
