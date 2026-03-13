@@ -814,11 +814,10 @@ app.get('/api/admin/reviews/pending', (req, res) => {
     });
 });
 
-// License Verification Endpoint (POS Software එක open වෙද්දී call වේ)
+// 1. License Verification Endpoint
 app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
     const { licenseKey } = req.params;
     
-    // Logic: වෙබ් අඩවියේ licenses (l) සහ POS සෙටප් දත්ත ඇති pos_licenses (p) join කරයි
     const query = `
         SELECT 
             l.licenseKey, l.status, l.expiresAt, l.userId,
@@ -837,12 +836,10 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
         
         const license = results[0];
         
-        // Expiry check
         if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
             return res.status(403).json({ success: false, message: 'License Expired', status: 'expired' });
         }
         
-        // Block check
         if (license.status === 'blocked') {
             return res.status(403).json({ success: false, message: 'License Blocked', status: 'blocked' });
         }
@@ -851,7 +848,6 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
             success: true,
             licenseKey: license.licenseKey,
             status: license.status,
-            // POS Setup දත්ත (දත්ත නැතිනම් default අගයන් යවයි)
             setupData: {
                 businessName: license.businessName || '',
                 businessType: license.businessType || '',
@@ -865,7 +861,7 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
     });
 });
 
-// සෙටප් එකේදී පුරවන දත්ත 'pos_licenses' table එකට පමණක් සේව් කරයි
+// 2. Setup Data Save Endpoint
 app.post('/api/pos/setup-save/:licenseKey', (req, res) => {
     const { licenseKey } = req.params;
     const { businessName, businessType, pack, botToken, adminChatId, phone, address } = req.body;
