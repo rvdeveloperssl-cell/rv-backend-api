@@ -671,13 +671,13 @@ app.put('/api/admin/clients/:id/verify', (req, res) => {
 app.get('/api/licenses/user/:userId', (req, res) => {
     const { userId } = req.params;
     
-    // JOIN වෙනුවට LEFT JOIN පාවිච්චි කරන්න
     const query = `
         SELECT 
             l.*, 
             s.name as softwareName, 
             s.description,
-            s.imageUrl
+            s.imageUrl,
+            s.productLinks  -- <--- මේක අනිවාර්යයෙන්ම තියෙන්න ඕනේ
         FROM licenses l
         LEFT JOIN software s ON l.softwareId = s.id  
         WHERE l.userId = ? AND l.status = 'active'
