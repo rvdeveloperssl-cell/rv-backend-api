@@ -818,17 +818,18 @@ app.get('/api/admin/reviews/pending', (req, res) => {
 app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
     const { licenseKey } = req.params;
     
+    // Logic: වෙබ් අඩවියේ licenses (l) සහ POS සෙටප් දත්ත ඇති pos_licenses (p) join කරයි
     const query = `
-        SELECT l.*, u.fullName, u.email 
+        SELECT 
+            l.licenseKey, l.status, l.expiresAt, l.userId,
+            p.businessName, p.businessType, p.pack, p.branch, p.botToken, p.adminChatId, p.phone
         FROM licenses l
-        LEFT JOIN users u ON l.userId = u.id
+        LEFT JOIN pos_licenses p ON l.licenseKey = p.licenseKey
         WHERE l.licenseKey = ?
     `;
     
     db.query(query, [licenseKey], (err, results) => {
-        if (err) {
-            return res.status(500).json({ success: false, message: 'Database error' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Database error' });
         
         if (results.length === 0) {
             return res.status(404).json({ success: false, message: 'Invalid License Key' });
@@ -836,11 +837,12 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
         
         const license = results[0];
         
-        // Check expiry
+        // Expiry check
         if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
             return res.status(403).json({ success: false, message: 'License Expired', status: 'expired' });
         }
         
+        // Block check
         if (license.status === 'blocked') {
             return res.status(403).json({ success: false, message: 'License Blocked', status: 'blocked' });
         }
@@ -849,16 +851,41 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
             success: true,
             licenseKey: license.licenseKey,
             status: license.status,
-            pack: license.pack, // 'Premium' ද කියා පරීක්ෂා කරයි
-            businessName: license.businessName,
-            businessType: license.businessType,
-            branch: license.branch,
-            branchLimit: license.branchLimit,
-            botToken: license.botToken,
-            adminChatId: license.adminChatId
-            
+            // POS Setup දත්ත (දත්ත නැතිනම් default අගයන් යවයි)
+            setupData: {
+                businessName: license.businessName || '',
+                businessType: license.businessType || '',
+                pack: license.pack || 'Basic',
+                branch: license.branch || 'Main',
+                botToken: license.botToken || '',
+                adminChatId: license.adminChatId || '',
+                phone: license.phone || ''
             }
         });
+    });
+});
+
+// සෙටප් එකේදී පුරවන දත්ත 'pos_licenses' table එකට පමණක් සේව් කරයි
+app.post('/api/pos/setup-save/:licenseKey', (req, res) => {
+    const { licenseKey } = req.params;
+    const { businessName, businessType, pack, botToken, adminChatId, phone, address } = req.body;
+
+    const sql = `
+        INSERT INTO pos_licenses (licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE 
+            businessName = VALUES(businessName),
+            businessType = VALUES(businessType),
+            pack = VALUES(pack),
+            botToken = VALUES(botToken),
+            adminChatId = VALUES(adminChatId),
+            phone = VALUES(phone),
+            address = VALUES(address)
+    `;
+
+    db.query(sql, [licenseKey, businessName, businessType, pack, botToken, adminChatId, phone, address], (err) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, message: 'Setup information saved' });
     });
 });
 
