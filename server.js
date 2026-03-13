@@ -820,7 +820,7 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
     
     const query = `
         SELECT l.*, u.fullName, u.email 
-        FROM pos_licenses l
+        FROM licenses l
         LEFT JOIN users u ON l.userId = u.id
         WHERE l.licenseKey = ?
     `;
@@ -855,10 +855,8 @@ app.get('/api/licenses/verify/:licenseKey', async (req, res) => {
             branch: license.branch,
             branchLimit: license.branchLimit,
             botToken: license.botToken,
-            adminChatId: license.adminChatId,
-            firebaseConfig: {
-                apiKey: license.firebaseApiKey,
-                databaseURL: license.firebaseDbUrl
+            adminChatId: license.adminChatId
+            
             }
         });
     });
