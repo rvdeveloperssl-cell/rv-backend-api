@@ -971,5 +971,27 @@ app.get('/api/pos/sync/:branchId', (req, res) => {
     });
 });
 
+app.post('/api/register-staff', (req, res) => {
+    const { branch_id, full_name, username, password, role, telegram_id, card_id } = req.body;
+
+    const sql = `INSERT INTO staff 
+                 (branch_id, full_name, username, password, role, telegram_id, card_id) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+    const values = [branch_id, full_name, username, password, role, telegram_id, card_id];
+
+    db.query(sql, values, (err, result) => {
+        if (err) {
+            console.error("❌ Staff Register Error:", err);
+            if (err.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({ success: false, message: "මෙම Username එක දැනටමත් පද්ධතියේ ඇත." });
+            }
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+
+        res.json({ success: true, message: "Staff registered successfully!", staffId: result.insertId });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
