@@ -904,27 +904,37 @@ app.post('/api/setup-branch', (req, res) => {
 app.post('/api/pos/validate-session', (req, res) => {
     const { licenseKey, branchId, hwid } = req.body;
 
-    // ලයිසන් එක සහ බ්‍රාන්ච් එක පරීක්ෂා කිරීම
-    const sql = `
-        SELECT l.status, l.maxActivations, b.id as branchValid
-        FROM licenses l
-        JOIN branches b ON l.licenseKey = b.licenseKey
+    // 1. ලයිසන් එක සහ බ්‍රාන්ච් එක පරීක්ෂා කිරීම
+    const query = `
+        SELECT l.status, l.expiresAt, b.business_name, l.maxActivations 
+        FROM licenses l 
+        JOIN branches b ON l.licenseKey = b.licenseKey 
         WHERE l.licenseKey = ? AND b.id = ?`;
 
-    db.query(sql, [licenseKey, branchId], (err, results) => {
+    db.query(query, [licenseKey, branchId], (err, results) => {
         if (err || results.length === 0) {
-            return res.json({ success: false, message: "Invalid License or Branch Configuration!" });
+            return res.json({ success: false, message: "මෙම පද්ධතිය සක්‍රීය කර නැත හෝ දත්ත දෝෂයකි. කරුණාකර නැවත ස්ථාපනය කරන්න." });
         }
 
-        if (results[0].status !== 'active') {
-            return res.json({ success: false, message: "This license is " + results[0].status });
+        const license = results[0];
+
+        // 2. Status එක Check කිරීම
+        if (license.status !== 'active') {
+            return res.json({ success: false, message: `ඔබේ ලයිසන් එක දැනට ${license.status} තත්වයේ පවතී. කරුණාකර සහාය ලබා ගන්න.` });
         }
 
-        // මෙතනදී ඔයාට HWID එක DB එකේ වෙනම ටේබල් එකක සේව් කරලා 
-        // Activation limit එක පරීක්ෂා කරන්නත් පුළුවන්. (මම දැනට සාර්ථකයි කියා එවන්නම්)
+        // 3. Expiry Date එක Check කිරීම
+        if (new Date(license.expiresAt) < new Date()) {
+            return res.json({ success: false, message: "ඔබේ බලපත්‍ර කාලය අවසන් වී ඇත (Expired). කරුණාකර එය අලුත් කරගන්න." });
+        }
+
+        // 4. (වැදගත්) මෙතනදී ඔයාට පුළුවන් HWID එක වෙනම ටේබල් එකක සේව් කරලා 
+        // branch එකකට අදාළ PC ගණන සීමා කරන්න (Branch Limit).
+        
         res.json({ 
             success: true, 
-            pack: "Premium" // මෙතනට DB එකෙන් එන Pack එක දාන්න (Basic/Premium)
+            pack: "Premium", // DB එකෙන් එන විදියට වෙනස් කරන්න
+            businessName: license.business_name 
         });
     });
 });
