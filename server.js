@@ -814,7 +814,89 @@ app.get('/api/admin/reviews/pending', (req, res) => {
     });
 });
 
+// --- 1. LICENSE VERIFICATION API ---
+// POS එකේ පළවෙනි පියවරේදී (Step 1) License Key එක සහ Branch එක පරීක්ෂා කිරීම
+app.post('/api/verify-license', (req, res) => {
+    const { licenseKey, branchName } = req.body;
 
+    if (!licenseKey || !branchName) {
+        return res.status(400).json({ success: false, message: "Missing License Key or Branch Name" });
+    }
+
+    // ලයිසන් එක පරීක්ෂා කිරීම (Status එක active විය යුතු අතර activations ඉතිරිව තිබිය යුතුය)
+    const sql = `SELECT * FROM licenses WHERE licenseKey = ? AND status = 'active'`;
+
+    db.query(sql, [licenseKey], (err, results) => {
+        if (err) {
+            console.error("❌ SQL Error (Verify):", err.message);
+            return res.status(500).json({ success: false, message: "Internal Server Error" });
+        }
+
+        if (results.length > 0) {
+            const license = results[0];
+
+            // දැනට පාවිච්චි කර ඇති ප්‍රමාණය උපරිම ප්‍රමාණයට වඩා අඩුදැයි බැලීම
+            if (license.currentActivations >= license.maxActivations) {
+                return res.json({ success: false, message: "Activation Limit Reached! (උපරිම සීමාව ඉක්මවා ඇත)" });
+            }
+
+            // ලයිසන් එක වලංගුයි
+            res.json({ 
+                success: true, 
+                message: "License Valid",
+                userId: license.userId // මෙය Setup පියවරට අවශ්‍ය වේ
+            });
+        } else {
+            res.json({ success: false, message: "Invalid, Blocked or Expired License Key!" });
+        }
+    });
+});
+
+// --- 2. BRANCH SETUP API ---
+// POS එකේ දෙවැනි පියවරේදී (Step 2) සියලුම විස්තර branches ටේබල් එකට සේව් කිරීම
+app.post('/api/setup-branch', (req, res) => {
+    const { 
+        licenseKey, 
+        branchName, 
+        businessName, 
+        businessType, 
+        phone, 
+        address, 
+        botToken, 
+        chatId 
+    } = req.body;
+
+    // 1. මුලින්ම ලයිසන් එකට අදාළ userId එක හොයාගන්නවා
+    db.query('SELECT userId FROM licenses WHERE licenseKey = ?', [licenseKey], (err, results) => {
+        if (err || results.length === 0) {
+            return res.status(404).json({ success: false, message: "License lookup failed during setup" });
+        }
+
+        const userId = results[0].userId;
+
+        // 2. Branch එක Insert කිරීම (ඔයා දුන්න ටේබල් Structure එකට අනුව)
+        const insertSql = `INSERT INTO branches 
+            (userId, licenseKey, business_name, branch_name, address, phone, telegram_bot_token, telegram_chat_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        db.query(insertSql, [userId, licenseKey, businessName, branchName, address, phone, botToken, chatId], (insErr, result) => {
+            if (insErr) {
+                console.error("❌ SQL Error (Setup):", insErr.message);
+                return res.status(500).json({ success: false, message: "Database insert failed: " + insErr.message });
+            }
+
+            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය 1 කින් වැඩි කිරීම
+            db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey]);
+
+            // සාර්ථකව අවසන්
+            res.json({ 
+                success: true, 
+                message: "System activated and branch setup complete!", 
+                branchId: result.insertId 
+            });
+        });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
