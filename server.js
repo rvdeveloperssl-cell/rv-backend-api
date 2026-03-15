@@ -996,20 +996,28 @@ app.post('/api/register-staff', (req, res) => {
 app.post('/api/login', (req, res) => {
     const { username, password, branchId } = req.body;
 
-    // Password එක plain text විදියටම දැනට check කරන්නේ (ඔයා register කරපු විදියට)
+    // සර්වර් එකේ log එක බලන්න එන දත්ත මොනවද කියලා
+    console.log(`🔑 Login Attempt: User=${username}, Branch=${branchId}`);
+
+    if (!username || !password || !branchId) {
+        return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
     const sql = `SELECT full_name as name, username as user, role 
                  FROM staff 
                  WHERE username = ? AND password = ? AND branch_id = ?`;
 
     db.query(sql, [username, password, branchId], (err, results) => {
         if (err) {
-            console.error(err);
+            console.error("❌ DB Login Error:", err);
             return res.status(500).json({ success: false, message: "Database error" });
         }
 
         if (results.length > 0) {
+            console.log("✅ Login Success:", results[0].name);
             res.json({ success: true, user: results[0] });
         } else {
+            console.warn("🚫 Login Failed for:", username);
             res.status(401).json({ success: false, message: "Invalid credentials" });
         }
     });
