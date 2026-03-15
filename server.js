@@ -898,5 +898,57 @@ app.post('/api/setup-branch', (req, res) => {
     });
 });
 
+// --- POS VALIDATION & SYNC API ---
+
+// 1. Session එක සහ HWID එක පරීක්ෂා කිරීම
+app.post('/api/pos/validate-session', (req, res) => {
+    const { licenseKey, branchId, hwid } = req.body;
+
+    // ලයිසන් එක සහ බ්‍රාන්ච් එක පරීක්ෂා කිරීම
+    const sql = `
+        SELECT l.status, l.maxActivations, b.id as branchValid
+        FROM licenses l
+        JOIN branches b ON l.licenseKey = b.licenseKey
+        WHERE l.licenseKey = ? AND b.id = ?`;
+
+    db.query(sql, [licenseKey, branchId], (err, results) => {
+        if (err || results.length === 0) {
+            return res.json({ success: false, message: "Invalid License or Branch Configuration!" });
+        }
+
+        if (results[0].status !== 'active') {
+            return res.json({ success: false, message: "This license is " + results[0].status });
+        }
+
+        // මෙතනදී ඔයාට HWID එක DB එකේ වෙනම ටේබල් එකක සේව් කරලා 
+        // Activation limit එක පරීක්ෂා කරන්නත් පුළුවන්. (මම දැනට සාර්ථකයි කියා එවන්නම්)
+        res.json({ 
+            success: true, 
+            pack: "Premium" // මෙතනට DB එකෙන් එන Pack එක දාන්න (Basic/Premium)
+        });
+    });
+});
+
+// 2. බ්‍රාන්ච් එකට අදාළ සියලුම දත්ත එකවර ලබා ගැනීම (Sync)
+app.get('/api/pos/sync/:branchId', (req, res) => {
+    const { branchId } = req.params;
+
+    // මෙතනදී අපි Inventory සහ Users කියන ටේබල් දෙකෙන්ම දත්ත ගන්නවා
+    // (දැනට සරලව Inventory එක පමණක් පෙන්වමි)
+    const invQuery = "SELECT * FROM inventory WHERE branchId = ?";
+    const userQuery = "SELECT name, user, role, telegram FROM users WHERE branchId = ?";
+
+    db.query(invQuery, [branchId], (err, invResults) => {
+        db.query(userQuery, [branchId], (err2, userResults) => {
+            res.json({
+                success: true,
+                inventory: invResults,
+                users: userResults,
+                categories: ["Grocery", "Electronics", "Hardware"] // මේවා DB එකෙන් ගන්නත් පුළුවන්
+            });
+        });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
