@@ -862,10 +862,11 @@ app.post('/api/setup-branch', (req, res) => {
         phone, 
         address, 
         botToken, 
-        chatId 
+        chatId,
+        hwid // Frontend එකෙන් එවන HWID එක මෙතනට ගන්නවා
     } = req.body;
 
-    console.log("🛠️ Setup attempt for license:", licenseKey); // සර්වර් එකේ log එක බලන්න
+    console.log("🛠️ Setup attempt for license:", licenseKey, "on Branch:", branchName);
 
     // 1. ලයිසන් එකට අදාළ userId එක හොයාගන්නවා
     db.query('SELECT userId FROM licenses WHERE licenseKey = ?', [licenseKey], (err, results) => {
@@ -881,32 +882,33 @@ app.post('/api/setup-branch', (req, res) => {
 
         const userId = results[0].userId;
 
-        // 2. Branch එක Insert කිරීම
+        // 2. Branch එක Insert කිරීම (hwid එකත් සමඟ)
         const insertSql = `INSERT INTO branches 
-            (userId, licenseKey, business_name, branch_name, address, phone, telegram_bot_token, telegram_chat_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+            (userId, licenseKey, business_name, branch_name, hwid, address, phone, telegram_bot_token, telegram_chat_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
-        db.query(insertSql, [userId, licenseKey, businessName, branchName, address, phone, botToken, chatId], (insErr, result) => {
+        const values = [userId, licenseKey, businessName, branchName, hwid, address, phone, botToken, chatId];
+
+        db.query(insertSql, values, (insErr, result) => {
             if (insErr) {
                 console.error("❌ SQL Error (Insert):", insErr.message);
                 return res.status(500).json({ success: false, message: "Branch setup failed: " + insErr.message });
             }
 
-            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය වැඩි කිරීම
+            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය 1 කින් වැඩි කිරීම
             db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey], (updErr) => {
                 if (updErr) console.error("❌ Could not update activation count:", updErr);
                 
                 console.log("✅ Setup Success for:", businessName);
                 res.json({ 
                     success: true, 
-                    message: "System activated successfully!", 
+                    message: "System activated and branch setup complete!", 
                     branchId: result.insertId 
                 });
             });
         });
     });
 });
-
 // --- POS VALIDATION & SYNC API ---
 
 // 1. Session එක සහ HWID එක පරීක්ෂා කිරීම
