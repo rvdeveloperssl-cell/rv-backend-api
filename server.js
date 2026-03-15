@@ -993,5 +993,27 @@ app.post('/api/register-staff', (req, res) => {
     });
 });
 
+app.post('/api/login', (req, res) => {
+    const { username, password, branchId } = req.body;
+
+    // Password එක plain text විදියටම දැනට check කරන්නේ (ඔයා register කරපු විදියට)
+    const sql = `SELECT full_name as name, username as user, role 
+                 FROM staff 
+                 WHERE username = ? AND password = ? AND branch_id = ?`;
+
+    db.query(sql, [username, password, branchId], (err, results) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+
+        if (results.length > 0) {
+            res.json({ success: true, user: results[0] });
+        } else {
+            res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
