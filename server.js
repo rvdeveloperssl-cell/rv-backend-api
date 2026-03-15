@@ -859,40 +859,49 @@ app.post('/api/setup-branch', (req, res) => {
         licenseKey, 
         branchName, 
         businessName, 
-        businessType, 
         phone, 
         address, 
         botToken, 
         chatId 
     } = req.body;
 
-    // 1. මුලින්ම ලයිසන් එකට අදාළ userId එක හොයාගන්නවා
+    console.log("🛠️ Setup attempt for license:", licenseKey); // සර්වර් එකේ log එක බලන්න
+
+    // 1. ලයිසන් එකට අදාළ userId එක හොයාගන්නවා
     db.query('SELECT userId FROM licenses WHERE licenseKey = ?', [licenseKey], (err, results) => {
-        if (err || results.length === 0) {
-            return res.status(404).json({ success: false, message: "License lookup failed during setup" });
+        if (err) {
+            console.error("❌ Database Error (Lookup):", err);
+            return res.status(500).json({ success: false, message: "Database lookup error" });
+        }
+
+        if (results.length === 0) {
+            console.warn("⚠️ License Not Found:", licenseKey);
+            return res.status(404).json({ success: false, message: "මෙම ලයිසන් එක පද්ධතියේ නැත." });
         }
 
         const userId = results[0].userId;
 
-        // 2. Branch එක Insert කිරීම (ඔයා දුන්න ටේබල් Structure එකට අනුව)
+        // 2. Branch එක Insert කිරීම
         const insertSql = `INSERT INTO branches 
             (userId, licenseKey, business_name, branch_name, address, phone, telegram_bot_token, telegram_chat_id) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
         db.query(insertSql, [userId, licenseKey, businessName, branchName, address, phone, botToken, chatId], (insErr, result) => {
             if (insErr) {
-                console.error("❌ SQL Error (Setup):", insErr.message);
-                return res.status(500).json({ success: false, message: "Database insert failed: " + insErr.message });
+                console.error("❌ SQL Error (Insert):", insErr.message);
+                return res.status(500).json({ success: false, message: "Branch setup failed: " + insErr.message });
             }
 
-            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය 1 කින් වැඩි කිරීම
-            db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey]);
-
-            // සාර්ථකව අවසන්
-            res.json({ 
-                success: true, 
-                message: "System activated and branch setup complete!", 
-                branchId: result.insertId 
+            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය වැඩි කිරීම
+            db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey], (updErr) => {
+                if (updErr) console.error("❌ Could not update activation count:", updErr);
+                
+                console.log("✅ Setup Success for:", businessName);
+                res.json({ 
+                    success: true, 
+                    message: "System activated successfully!", 
+                    branchId: result.insertId 
+                });
             });
         });
     });
