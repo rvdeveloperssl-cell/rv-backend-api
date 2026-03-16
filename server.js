@@ -993,33 +993,70 @@ app.post('/api/register-staff', (req, res) => {
     });
 });
 
-app.post('/api/login', (req, res) => {
-    const { username, password, branchId } = req.body;
+// POST: /api/pos/login
+app.post('/api/pos/login', (req, res) => {
+    const { username, password, branchId, deviceInfo } = req.body;
 
-    // සර්වර් එකේ log එක බලන්න එන දත්ත මොනවද කියලා
     console.log(`🔑 Login Attempt: User=${username}, Branch=${branchId}`);
-
-    if (!username || !password || !branchId) {
-        return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
 
     const sql = `SELECT full_name as name, username as user, role 
                  FROM staff 
                  WHERE username = ? AND password = ? AND branch_id = ?`;
 
     db.query(sql, [username, password, branchId], (err, results) => {
-        if (err) {
-            console.error("❌ DB Login Error:", err);
-            return res.status(500).json({ success: false, message: "Database error" });
-        }
+        if (err) return res.status(500).json({ success: false, message: "Database error" });
 
         if (results.length > 0) {
-            console.log("✅ Login Success:", results[0].name);
-            res.json({ success: true, user: results[0] });
+            const user = results[0];
+
+            // --- Dashboard එකට පේන්න Log එකක් සේව් කරමු ---
+            const logSql = `INSERT INTO system_logs (branch_id, user_name, login_time, device_info, status) 
+                            VALUES (?, ?, NOW(), ?, 'Active')`;
+            
+            db.query(logSql, [branchId, user.name, deviceInfo], (logErr, logResult) => {
+                if (logErr) console.error("❌ Log Save Error:", logErr);
+                
+                // සාර්ථක නම් User details සහ logId එක යවනවා
+                res.json({ 
+                    success: true, 
+                    user: user, 
+                    logId: logResult ? logResult.insertId : null 
+                });
+            });
+
         } else {
-            console.warn("🚫 Login Failed for:", username);
             res.status(401).json({ success: false, message: "Invalid credentials" });
         }
+    });
+});
+
+// 1. ලොගින් වෙද්දී Log එකක් සේව් කිරීම
+app.post('/api/pos/save-log', (req, res) => {
+    const { branchId, userName, deviceInfo } = req.body;
+    const sql = `INSERT INTO system_logs (branch_id, user_name, login_time, device_info, status) 
+                 VALUES (?, NOW(), ?, ?, 'Active')`;
+
+    db.query(sql, [branchId, userName, deviceInfo], (err, result) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, logId: result.insertId });
+    });
+});
+
+// 2. දැනට ඉන්න Active Users ලා dashboard එකට ලබා ගැනීම
+app.get('/api/pos/active-users/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    
+    // staff table එකත් එක්ක JOIN කරලා role එක ගන්නවා
+    const sql = `
+        SELECT l.user_name as fullName, l.login_time as loginTime, s.role 
+        FROM system_logs l
+        JOIN staff s ON l.user_name = s.full_name AND l.branch_id = s.branch_id
+        WHERE l.branch_id = ? AND l.status = 'Active' 
+        ORDER BY l.login_time DESC`;
+
+    db.query(sql, [branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, users: results });
     });
 });
 
