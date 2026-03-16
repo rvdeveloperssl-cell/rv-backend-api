@@ -823,28 +823,43 @@ app.post('/api/verify-license', (req, res) => {
         return res.status(400).json({ success: false, message: "Missing License Key or Branch Name" });
     }
 
-    // ලයිසන් එක පරීක්ෂා කිරීම (Status එක active විය යුතු අතර activations ඉතිරිව තිබිය යුතුය)
-    const sql = `SELECT * FROM licenses WHERE licenseKey = ? AND status = 'active'`;
+    // 🛠️ JOIN Query එක: licenses සහ branches ටේබල් දෙකම පීරනවා
+    // ලයිසන් එක active වෙන්න ඕනේ වගේම branch_name එකත් සමාන වෙන්න ඕනේ
+    const sql = `
+        SELECT l.*, b.business_name, b.address, b.phone, b.telegram_bot_token, b.telegram_chat_id, b.id as branchId
+        FROM licenses l
+        LEFT JOIN branches b ON l.licenseKey = b.licenseKey AND b.branch_name = ?
+        WHERE l.licenseKey = ? AND l.status = 'active'`;
 
-    db.query(sql, [licenseKey], (err, results) => {
+    db.query(sql, [branchName, licenseKey], (err, results) => {
         if (err) {
             console.error("❌ SQL Error (Verify):", err.message);
             return res.status(500).json({ success: false, message: "Internal Server Error" });
         }
 
         if (results.length > 0) {
-            const license = results[0];
+            const data = results[0];
 
-            // දැනට පාවිච්චි කර ඇති ප්‍රමාණය උපරිම ප්‍රමාණයට වඩා අඩුදැයි බැලීම
-            if (license.currentActivations >= license.maxActivations) {
-                return res.json({ success: false, message: "Activation Limit Reached! (උපරිම සීමාව ඉක්මවා ඇත)" });
+            // 1. Activation limit එක චෙක් කිරීම
+            // හැබැයි මේ බ්‍රාන්ච් එක දැනටමත් සේව් වෙලා තියෙන එකක් නම් (data.branchId තිබේ නම්) limit එක බලන්න ඕනේ නැහැ
+            if (!data.branchId && data.currentActivations >= data.maxActivations) {
+                return res.json({ success: false, message: "Activation Limit Reached!" });
             }
 
-            // ලයිසන් එක වලංගුයි
+            // 2. දත්ත ටික Frontend එකට යවනවා
             res.json({ 
                 success: true, 
-                message: "License Valid",
-                userId: license.userId // මෙය Setup පියවරට අවශ්‍ය වේ
+                message: data.branchId ? "Data Found for Auto-fill" : "License Valid",
+                userId: data.userId,
+                // මෙන්න මේ data කියන කෑල්ල තමයි frontend එකේ auto-fill වෙන්නේ
+                data: {
+                    business_name: data.business_name || "",
+                    address: data.address || "",
+                    phone: data.phone || "",
+                    telegram_bot_token: data.telegram_bot_token || "",
+                    telegram_chat_id: data.telegram_chat_id || "",
+                    id: data.branchId || null
+                }
             });
         } else {
             res.json({ success: false, message: "Invalid, Blocked or Expired License Key!" });
