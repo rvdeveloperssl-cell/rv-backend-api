@@ -1008,14 +1008,13 @@ app.post('/api/pos/login', (req, res) => {
         if (results.length > 0) {
             const user = results[0];
 
-            // 1. System Log එක (ඔයාගේ පරණ කෝඩ් එක)
-            const logSql = `INSERT INTO system_logs (branch_id, user_name, login_time, device_info, status) 
-                            VALUES (?, ?, NOW(), ?, 'Active')`;
+            // මෙතනදී user.role එකත් INSERT කරනවා
+            const logSql = `INSERT INTO system_logs (branch_id, user_name, user_role, login_time, device_info, status) 
+                            VALUES (?, ?, ?, NOW(), ?, 'Active')`;
             
-            db.query(logSql, [branchId, user.name, deviceInfo], (logErr, logResult) => {
+            db.query(logSql, [branchId, user.name, user.role, deviceInfo], (logErr, logResult) => {
                 const currentLogId = logResult ? logResult.insertId : null;
 
-                // 2. Attendance එක (අලුතින් එකතු කළා - ටේබල් දෙකටම එකම වෙලාවක සේව් වෙනවා)
                 const attSql = `INSERT INTO attendance (branch_id, staff_id, employee_name, login_time, date) 
                                 VALUES (?, ?, ?, NOW(), ?)`;
                 
@@ -1024,7 +1023,7 @@ app.post('/api/pos/login', (req, res) => {
                         success: true, 
                         user: user, 
                         logId: currentLogId,
-                        attId: attResult ? attResult.insertId : null // අලුත් ID එකත් යවනවා
+                        attId: attResult ? attResult.insertId : null
                     });
                 });
             });
@@ -1050,13 +1049,12 @@ app.post('/api/pos/save-log', (req, res) => {
 app.get('/api/pos/active-users/:branchId', (req, res) => {
     const branchId = req.params.branchId;
     
-    // staff table එකත් එක්ක JOIN කරලා role එක ගන්නවා
+    // කෙලින්ම system_logs එකෙන් fullName සහ role එක ගන්නවා
     const sql = `
-        SELECT l.user_name as fullName, l.login_time as loginTime, s.role 
-        FROM system_logs l
-        JOIN staff s ON l.user_name = s.full_name AND l.branch_id = s.branch_id
-        WHERE l.branch_id = ? AND l.status = 'Active' 
-        ORDER BY l.login_time DESC`;
+        SELECT user_name as fullName, user_role as role, login_time as loginTime 
+        FROM system_logs 
+        WHERE branch_id = ? AND status = 'Active' 
+        ORDER BY login_time DESC`;
 
     db.query(sql, [branchId], (err, results) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
