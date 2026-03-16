@@ -1107,7 +1107,26 @@ app.get('/api/pos/attendance-history/:branchId', (req, res) => {
     });
 });
 
+// GET: අදාළ ශාඛාවේ සියලුම Staff මෙම්බර්ස්ලා ලබා ගැනීම
+app.get('/api/pos/staff/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    const sql = `SELECT id, full_name as name, username as user, role, telegram_id as telegramId 
+                 FROM staff 
+                 WHERE branch_id = ?`;
 
+    db.query(sql, [branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, staff: results });
+    });
+});
+
+app.post('/api/pos/delete-staff', (req, res) => {
+    const { id } = req.body;
+    db.query("DELETE FROM staff WHERE id = ?", [id], (err, result) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
