@@ -1060,5 +1060,37 @@ app.get('/api/pos/active-users/:branchId', (req, res) => {
     });
 });
 
+app.post('/api/pos/logout', (req, res) => {
+    const { logId } = req.body;
+
+    if (!logId) return res.status(400).json({ success: false, message: "Log ID is required" });
+
+    const sql = `UPDATE system_logs 
+                 SET logout_time = NOW(), status = 'Offline' 
+                 WHERE id = ?`;
+
+    db.query(sql, [logId], (err, result) => {
+        if (err) {
+            console.error("❌ Logout Error:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        res.json({ success: true, message: "Logged out successfully" });
+    });
+});
+
+// GET: සියලුම ලොග් විස්තර ලබා ගැනීම
+app.get('/api/pos/all-logs/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    const sql = `SELECT user_name as user, login_time as loginTime, logout_time as logoutTime, status, device_info as device 
+                 FROM system_logs 
+                 WHERE branch_id = ? 
+                 ORDER BY login_time DESC LIMIT 100`; // අන්තිම logs 100 විතරක් ගමු
+
+    db.query(sql, [branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, logs: results });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
