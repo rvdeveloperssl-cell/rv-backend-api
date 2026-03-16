@@ -996,10 +996,9 @@ app.post('/api/register-staff', (req, res) => {
 // POST: /api/pos/login
 app.post('/api/pos/login', (req, res) => {
     const { username, password, branchId, deviceInfo } = req.body;
+    const today = new Date().toISOString().slice(0, 10);
 
-    console.log(`🔑 Login Attempt: User=${username}, Branch=${branchId}`);
-
-    const sql = `SELECT full_name as name, username as user, role 
+    const sql = `SELECT id, full_name as name, username as user, role 
                  FROM staff 
                  WHERE username = ? AND password = ? AND branch_id = ?`;
 
@@ -1009,21 +1008,26 @@ app.post('/api/pos/login', (req, res) => {
         if (results.length > 0) {
             const user = results[0];
 
-            // --- Dashboard එකට පේන්න Log එකක් සේව් කරමු ---
+            // 1. System Log එක (ඔයාගේ පරණ කෝඩ් එක)
             const logSql = `INSERT INTO system_logs (branch_id, user_name, login_time, device_info, status) 
                             VALUES (?, ?, NOW(), ?, 'Active')`;
             
             db.query(logSql, [branchId, user.name, deviceInfo], (logErr, logResult) => {
-                if (logErr) console.error("❌ Log Save Error:", logErr);
+                const currentLogId = logResult ? logResult.insertId : null;
+
+                // 2. Attendance එක (අලුතින් එකතු කළා - ටේබල් දෙකටම එකම වෙලාවක සේව් වෙනවා)
+                const attSql = `INSERT INTO attendance (branch_id, staff_id, employee_name, login_time, date) 
+                                VALUES (?, ?, ?, NOW(), ?)`;
                 
-                // සාර්ථක නම් User details සහ logId එක යවනවා
-                res.json({ 
-                    success: true, 
-                    user: user, 
-                    logId: logResult ? logResult.insertId : null 
+                db.query(attSql, [branchId, user.id, user.name, today], (attErr, attResult) => {
+                    res.json({ 
+                        success: true, 
+                        user: user, 
+                        logId: currentLogId,
+                        attId: attResult ? attResult.insertId : null // අලුත් ID එකත් යවනවා
+                    });
                 });
             });
-
         } else {
             res.status(401).json({ success: false, message: "Invalid credentials" });
         }
@@ -1061,20 +1065,21 @@ app.get('/api/pos/active-users/:branchId', (req, res) => {
 });
 
 app.post('/api/pos/logout', (req, res) => {
-    const { logId } = req.body;
+    const { logId, attId } = req.body; // IDs දෙකම ගන්නවා
 
-    if (!logId) return res.status(400).json({ success: false, message: "Log ID is required" });
+    // System Log එක Offline කරනවා
+    const sql1 = `UPDATE system_logs SET logout_time = NOW(), status = 'Offline' WHERE id = ?`;
+    // Attendance එකේ Logout time සහ වැඩ කළ පැය ගණන හදනවා
+    const sql2 = `UPDATE attendance SET logout_time = NOW(), daily_total_hours = TIMEDIFF(NOW(), login_time) WHERE id = ?`;
 
-    const sql = `UPDATE system_logs 
-                 SET logout_time = NOW(), status = 'Offline' 
-                 WHERE id = ?`;
-
-    db.query(sql, [logId], (err, result) => {
-        if (err) {
-            console.error("❌ Logout Error:", err);
-            return res.status(500).json({ success: false, message: "Database error" });
+    db.query(sql1, [logId], () => {
+        if (attId) {
+            db.query(sql2, [attId], () => {
+                res.json({ success: true });
+            });
+        } else {
+            res.json({ success: true });
         }
-        res.json({ success: true, message: "Logged out successfully" });
     });
 });
 
@@ -1091,6 +1096,18 @@ app.get('/api/pos/all-logs/:branchId', (req, res) => {
         res.json({ success: true, logs: results });
     });
 });
+
+app.get('/api/pos/attendance-history/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    const sql = `SELECT date, employee_name, login_time, logout_time, daily_total_hours 
+                 FROM attendance WHERE branch_id = ? ORDER BY id DESC LIMIT 50`;
+    db.query(sql, [branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, records: results });
+    });
+});
+
+
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
