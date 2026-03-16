@@ -1097,10 +1097,16 @@ app.get('/api/pos/all-logs/:branchId', (req, res) => {
 
 app.get('/api/pos/attendance-history/:branchId', (req, res) => {
     const branchId = req.params.branchId;
-    const sql = `SELECT date, employee_name, login_time, logout_time, daily_total_hours 
+    // DATE_FORMAT පාවිච්චි කරලා දවස ලස්සනට ගමු
+    const sql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, 
+                 employee_name, login_time, logout_time, daily_total_hours 
                  FROM attendance WHERE branch_id = ? ORDER BY id DESC LIMIT 50`;
+    
     db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false });
+        if (err) {
+            console.error("Attendance Fetch Error:", err);
+            return res.status(500).json({ success: false });
+        }
         res.json({ success: true, records: results });
     });
 });
