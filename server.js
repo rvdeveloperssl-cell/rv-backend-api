@@ -1082,12 +1082,19 @@ app.post('/api/pos/logout', (req, res) => {
 });
 
 // GET: සියලුම ලොග් විස්තර ලබා ගැනීම
+// --- User Logs API ---
 app.get('/api/pos/all-logs/:branchId', (req, res) => {
     const branchId = req.params.branchId;
+    
+    // බ්‍රවුසරය cache කරන එක නවත්වන headers
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const sql = `SELECT user_name as user, login_time as loginTime, logout_time as logoutTime, status, device_info as device 
                  FROM system_logs 
                  WHERE branch_id = ? 
-                 ORDER BY login_time DESC LIMIT 100`; // අන්තිම logs 100 විතරක් ගමු
+                 ORDER BY login_time DESC LIMIT 100`;
 
     db.query(sql, [branchId], (err, results) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
@@ -1095,18 +1102,20 @@ app.get('/api/pos/all-logs/:branchId', (req, res) => {
     });
 });
 
+// --- Attendance History API ---
 app.get('/api/pos/attendance-history/:branchId', (req, res) => {
     const branchId = req.params.branchId;
-    // DATE_FORMAT පාවිච්චි කරලා දවස ලස්සනට ගමු
+
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const sql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, 
                  employee_name, login_time, logout_time, daily_total_hours 
                  FROM attendance WHERE branch_id = ? ORDER BY id DESC LIMIT 50`;
     
     db.query(sql, [branchId], (err, results) => {
-        if (err) {
-            console.error("Attendance Fetch Error:", err);
-            return res.status(500).json({ success: false });
-        }
+        if (err) return res.status(500).json({ success: false });
         res.json({ success: true, records: results });
     });
 });
