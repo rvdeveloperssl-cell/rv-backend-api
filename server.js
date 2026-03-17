@@ -1220,6 +1220,51 @@ app.get('/api/pos/get-settings/:branchId', (req, res) => {
     });
 });
 
+// --- 📦 Inventory API: Save or Update Item ---
+app.post('/api/pos/save-inventory', (req, res) => {
+    const { 
+        branchId, barcode, name, category, cost, sale, 
+        stock, lowStockLimit, saleType, itemDiscount, discType 
+    } = req.body;
+
+    // MySQL Query එක: බාර්කෝඩ් එක සහ බ්‍රාන්ච් එක සමාන නම් Update කරයි, නැත්නම් Insert කරයි.
+    const sql = `
+        INSERT INTO inventory 
+        (branch_id, barcode, item_name, category, cost_price, sale_price, stock_qty, low_stock_limit, sale_type, discount, disc_type) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+        ON DUPLICATE KEY UPDATE 
+        item_name = VALUES(item_name),
+        category = VALUES(category),
+        cost_price = VALUES(cost_price),
+        sale_price = VALUES(sale_price),
+        stock_qty = VALUES(stock_qty),
+        low_stock_limit = VALUES(low_stock_limit),
+        sale_type = VALUES(sale_type),
+        discount = VALUES(discount),
+        disc_type = VALUES(disc_type)`;
+
+    const values = [
+        branchId, barcode, name, category, cost, sale, 
+        stock, lowStockLimit, saleType, itemDiscount, discType
+    ];
+
+    db.query(sql, values, (err, result) => {
+        if (err) {
+            console.error("❌ Inventory Error:", err);
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+        res.json({ success: true, message: "Inventory Synced Successfully!" });
+    });
+});
+
+// --- 📦 Inventory API: Get All Items for Branch ---
+app.get('/api/pos/get-inventory/:branchId', (req, res) => {
+    const sql = `SELECT * FROM inventory WHERE branch_id = ?`;
+    db.query(sql, [req.params.branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, data: results });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
