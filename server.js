@@ -1152,5 +1152,60 @@ app.post('/api/pos/delete-staff', (req, res) => {
     });
 });
 
+// පින්තූර සේව් කරන තැන ලෑස්ති කිරීම
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = './uploads/logos/';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `logo_${req.body.branchId}_${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+
+const upload = multer({ storage: storage });
+
+// --- API Endpoint: Logo සහ Settings Update කිරීම ---
+app.post('/api/pos/update-settings', upload.single('logo'), (req, res) => {
+    const { branchId, billFooter, currency } = req.body;
+    let logoUrl = req.body.existingLogoUrl; // පරණ ලෝගෝ එකක් තිබේ නම්
+
+    if (req.file) {
+        // අලුත් ලෝගෝ එකක් අප්ලෝඩ් වුණොත් එහි URL එක හදනවා
+        logoUrl = `https://api.rvdevelopers.lk/uploads/logos/${req.file.filename}`;
+    }
+
+    // ON DUPLICATE KEY UPDATE පාවිච්චි කරලා එකම query එකෙන් Insert හෝ Update කරන්න පුළුවන්
+    // (මේක වැඩ කරන්න නම් branch_id එක UNIQUE වෙන්න ඕනේ settings table එකේ)
+    const sql = `
+        INSERT INTO settings (branch_id, logo_url, bill_footer, currency) 
+        VALUES (?, ?, ?, ?) 
+        ON DUPLICATE KEY UPDATE 
+        logo_url = VALUES(logo_url), 
+        bill_footer = VALUES(bill_footer), 
+        currency = VALUES(currency)`;
+
+    db.query(sql, [branchId, logoUrl, billFooter, currency], (err, result) => {
+        if (err) {
+            console.error("❌ SQL Error:", err);
+            return res.status(500).json({ success: false, message: "Settings Update Failed" });
+        }
+        res.json({ success: true, logoUrl: logoUrl, message: "Settings Updated Successfully!" });
+    });
+});
+
+// --- API Endpoint: Settings ලබා ගැනීම ---
+app.get('/api/pos/get-settings/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    const sql = `SELECT * FROM settings WHERE branch_id = ?`;
+
+    db.query(sql, [branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, data: results[0] || {} });
+    });
+});
+
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
