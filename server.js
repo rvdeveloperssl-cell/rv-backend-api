@@ -80,21 +80,27 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Slip save karanna folder ekak hadanawa
+// Slip save කරන folder එක හදනවා
 const uploadDir = 'uploads/slips';
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
+// මෙතන නම slipStorage ලෙස වෙනස් කළා
+const slipStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, 'slip-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
+
+// මෙතන නම uploadSlip ලෙස වෙනස් කළා
+const uploadSlip = multer({ storage: slipStorage });
+
+// Uploads ෆෝල්ඩර් එක static ලෙස පාවිච්චි කිරීම (මේක එක පාරක් තිබුණාම ඇති)
 app.use('/uploads', express.static('uploads'));
+
 
 // --- LICENSE GENERATOR FUNCTION ---
 // මේක function එකක් විදිහට ගත්තා ඕනෑම තැනක පාවිච්චි කරන්න පුළුවන් වෙන්න
@@ -1152,32 +1158,36 @@ app.post('/api/pos/delete-staff', (req, res) => {
     });
 });
 
-// පින්තූර සේව් කරන තැන ලෑස්ති කිරීම
-const storage = multer.diskStorage({
+// --- Business Logo Upload Configuration ---
+
+// ලෝගෝ සේව් කරන තැන ලෑස්ති කිරීම (Identifier එක 'logoStorage' ලෙස වෙනස් කළා)
+const logoStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = './uploads/logos/';
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
     filename: (req, file, cb) => {
-        cb(null, `logo_${req.body.branchId}_${Date.now()}${path.extname(file.originalname)}`);
+        // body එකේ branchId නැති වුණොත් 'unknown' කියලා වැටෙන්න හදල තියෙන්නේ
+        const bID = req.body.branchId || 'unknown';
+        cb(null, `logo_${bID}_${Date.now()}${path.extname(file.originalname)}`);
     }
 });
 
-const upload = multer({ storage: storage });
+// Middleware එක 'logoUpload' ලෙස නම් කළා
+const logoUpload = multer({ storage: logoStorage });
 
 // --- API Endpoint: Logo සහ Settings Update කිරීම ---
-app.post('/api/pos/update-settings', upload.single('logo'), (req, res) => {
-    const { branchId, billFooter, currency } = req.body;
-    let logoUrl = req.body.existingLogoUrl; // පරණ ලෝගෝ එකක් තිබේ නම්
+app.post('/api/pos/update-settings', logoUpload.single('logo'), (req, res) => {
+    const { branchId, billFooter, currency, licenseKey } = req.body;
+    let logoUrl = req.body.existingLogoUrl || null;
 
     if (req.file) {
-        // අලුත් ලෝගෝ එකක් අප්ලෝඩ් වුණොත් එහි URL එක හදනවා
+        // සර්වර් එකේ පින්තූරය තියෙන ලින්ක් එක
         logoUrl = `https://api.rvdevelopers.lk/uploads/logos/${req.file.filename}`;
     }
 
-    // ON DUPLICATE KEY UPDATE පාවිච්චි කරලා එකම query එකෙන් Insert හෝ Update කරන්න පුළුවන්
-    // (මේක වැඩ කරන්න නම් branch_id එක UNIQUE වෙන්න ඕනේ settings table එකේ)
+    // Database එකට සේව් කිරීම (Insert or Update)
     const sql = `
         INSERT INTO settings (branch_id, logo_url, bill_footer, currency) 
         VALUES (?, ?, ?, ?) 
@@ -1188,10 +1198,14 @@ app.post('/api/pos/update-settings', upload.single('logo'), (req, res) => {
 
     db.query(sql, [branchId, logoUrl, billFooter, currency], (err, result) => {
         if (err) {
-            console.error("❌ SQL Error:", err);
+            console.error("❌ SQL Error (Settings):", err);
             return res.status(500).json({ success: false, message: "Settings Update Failed" });
         }
-        res.json({ success: true, logoUrl: logoUrl, message: "Settings Updated Successfully!" });
+        res.json({ 
+            success: true, 
+            logoUrl: logoUrl, 
+            message: "Settings Updated Successfully!" 
+        });
     });
 });
 
