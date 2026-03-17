@@ -817,53 +817,46 @@ app.get('/api/admin/reviews/pending', (req, res) => {
 // --- 1. LICENSE VERIFICATION API ---
 // POS එකේ පළවෙනි පියවරේදී (Step 1) License Key එක සහ Branch එක පරීක්ෂා කිරීම
 app.post('/api/verify-license', (req, res) => {
-    const { licenseKey, branchName } = req.body;
+    const { licenseKey } = req.body; // දැන් branchName අනිවාර්ය නැහැ Step 1 වලදී
 
-    if (!licenseKey || !branchName) {
-        return res.status(400).json({ success: false, message: "Missing License Key or Branch Name" });
+    if (!licenseKey) {
+        return res.status(400).json({ success: false, message: "Missing License Key" });
     }
 
-    // 🛠️ JOIN Query එක: 
-    // ලයිසන් එක 'active' ද බලනවා, ඒ වගේම බ්‍රාන්ච් එකේ නම ගැලපෙනවා නම් ඒ දත්තත් එක්කම ගන්නවා.
-    const sql = `
-        SELECT l.*, b.business_name, b.address, b.phone, b.telegram_bot_token, b.telegram_chat_id, b.id as branchId
-        FROM licenses l
-        LEFT JOIN branches b ON l.licenseKey = b.licenseKey AND b.branch_name = ?
-        WHERE l.licenseKey = ? AND l.status = 'active'`;
+    // 1. මුලින්ම ලයිසන් එක ඇක්ටිව් ද කියලා බලනවා
+    const licenseSql = `SELECT * FROM licenses WHERE licenseKey = ? AND status = 'active'`;
 
-    db.query(sql, [branchName, licenseKey], (err, results) => {
+    db.query(licenseSql, [licenseKey], (err, licenseResults) => {
         if (err) {
-            console.error("❌ SQL Error (Verify):", err.message);
+            console.error("❌ SQL Error (License):", err.message);
             return res.status(500).json({ success: false, message: "Internal Server Error" });
         }
 
-        if (results.length > 0) {
-            const data = results[0];
+        if (licenseResults.length > 0) {
+            const licenseData = licenseResults[0];
 
-            // 1. Activation limit එක චෙක් කිරීම
-            // දැනටමත් සේව් වෙලා තියෙන බ්‍රාන්ච් එකක් නම් (branchId තිබේ නම්) ලිමිට් එක බලන්න ඕනේ නැහැ.
-            // මොකද ඒක දැනටමත් ඇක්ටිව් බ්‍රාන්ච් එකක් නිසා.
-            if (!data.branchId && data.currentActivations >= data.maxActivations) {
-                return res.json({ success: false, message: "මෙම ලයිසන් එකට අදාළ උපරිම සීමාව ඉක්මවා ඇත (Activation Limit Reached)!" });
-            }
-
-            // 2. දත්ත Frontend එකට යවනවා
-            res.json({ 
-                success: true, 
-                message: data.branchId ? "Data Found for Auto-fill" : "License Valid",
-                userId: data.userId,
-                data: {
-                    business_name: data.business_name || "",
-                    address: data.address || "",
-                    phone: data.phone || "",
-                    telegram_bot_token: data.telegram_bot_token || "",
-                    telegram_chat_id: data.telegram_chat_id || "",
-                    id: data.branchId || null
+            // 2. මේ ලයිසන් එකට අදාළව දැනට තියෙන බ්‍රාන්ච් ටික හොයනවා
+            const branchSql = `SELECT id, branch_name, business_name, address, phone, telegram_bot_token, telegram_chat_id FROM branches WHERE licenseKey = ?`;
+            
+            db.query(branchSql, [licenseKey], (bErr, branchResults) => {
+                if (bErr) {
+                    console.error("❌ SQL Error (Branches):", bErr.message);
+                    return res.status(500).json({ success: false, message: "Error fetching branches" });
                 }
+
+                // සාර්ථකයි! ලයිසන් දත්ත සහ දැනට තියෙන බ්‍රාන්ච් ලිස්ට් එක යවනවා
+                res.json({ 
+                    success: true, 
+                    message: "License Valid",
+                    userId: licenseData.userId,
+                    maxActivations: licenseData.maxActivations,
+                    currentActivations: licenseData.currentActivations,
+                    existingBranches: branchResults // මෙන්න මේ ලිස්ට් එක තමයි Frontend Dropdown එකට යන්නේ
+                });
             });
+
         } else {
-            // ලයිසන් එක වැරදි නම් හෝ status එක active නැත්නම්
-            res.json({ success: false, message: "වලංගු නොවන, අත්හිටුවන ලද හෝ කල් ඉකුත් වූ ලයිසන් එකකි." });
+            res.json({ success: false, message: "වලංගු නොවන හෝ අත්හිටුවන ලද ලයිසන් කේතයකි." });
         }
     });
 });
