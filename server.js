@@ -1266,5 +1266,40 @@ app.get('/api/pos/get-inventory/:branchId', (req, res) => {
     });
 });
 
+// --- 📂 Category API: Add Category ---
+app.post('/api/pos/add-category', (req, res) => {
+    const { branchId, categoryName } = req.body;
+    const sql = `INSERT INTO categories (branch_id, category_name) VALUES (?, ?)`;
+    
+    db.query(sql, [branchId, categoryName], (err, result) => {
+        if (err) {
+            if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ success: false, message: "Category already exists!" });
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+        res.json({ success: true, message: "Category Added!" });
+    });
+});
+
+// --- 📂 Category API: Delete Category ---
+app.post('/api/pos/delete-category', (req, res) => {
+    const { branchId, categoryName } = req.body;
+    const sql = `DELETE FROM categories WHERE branch_id = ? AND category_name = ?`;
+    
+    db.query(sql, [branchId, categoryName], (err, result) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, message: "Category Deleted!" });
+    });
+});
+
+// --- 📂 Category API: Get Categories ---
+app.get('/api/pos/get-categories/:branchId', (req, res) => {
+    const sql = `SELECT category_name FROM categories WHERE branch_id = ?`;
+    db.query(sql, [req.params.branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false });
+        const catList = results.map(row => row.category_name);
+        res.json({ success: true, data: catList });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
