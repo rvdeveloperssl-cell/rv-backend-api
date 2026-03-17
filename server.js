@@ -823,8 +823,8 @@ app.post('/api/verify-license', (req, res) => {
         return res.status(400).json({ success: false, message: "Missing License Key or Branch Name" });
     }
 
-    // 🛠️ JOIN Query එක: licenses සහ branches ටේබල් දෙකම පීරනවා
-    // ලයිසන් එක active වෙන්න ඕනේ වගේම branch_name එකත් සමාන වෙන්න ඕනේ
+    // 🛠️ JOIN Query එක: 
+    // ලයිසන් එක 'active' ද බලනවා, ඒ වගේම බ්‍රාන්ච් එකේ නම ගැලපෙනවා නම් ඒ දත්තත් එක්කම ගන්නවා.
     const sql = `
         SELECT l.*, b.business_name, b.address, b.phone, b.telegram_bot_token, b.telegram_chat_id, b.id as branchId
         FROM licenses l
@@ -841,17 +841,17 @@ app.post('/api/verify-license', (req, res) => {
             const data = results[0];
 
             // 1. Activation limit එක චෙක් කිරීම
-            // හැබැයි මේ බ්‍රාන්ච් එක දැනටමත් සේව් වෙලා තියෙන එකක් නම් (data.branchId තිබේ නම්) limit එක බලන්න ඕනේ නැහැ
+            // දැනටමත් සේව් වෙලා තියෙන බ්‍රාන්ච් එකක් නම් (branchId තිබේ නම්) ලිමිට් එක බලන්න ඕනේ නැහැ.
+            // මොකද ඒක දැනටමත් ඇක්ටිව් බ්‍රාන්ච් එකක් නිසා.
             if (!data.branchId && data.currentActivations >= data.maxActivations) {
-                return res.json({ success: false, message: "Activation Limit Reached!" });
+                return res.json({ success: false, message: "මෙම ලයිසන් එකට අදාළ උපරිම සීමාව ඉක්මවා ඇත (Activation Limit Reached)!" });
             }
 
-            // 2. දත්ත ටික Frontend එකට යවනවා
+            // 2. දත්ත Frontend එකට යවනවා
             res.json({ 
                 success: true, 
                 message: data.branchId ? "Data Found for Auto-fill" : "License Valid",
                 userId: data.userId,
-                // මෙන්න මේ data කියන කෑල්ල තමයි frontend එකේ auto-fill වෙන්නේ
                 data: {
                     business_name: data.business_name || "",
                     address: data.address || "",
@@ -862,7 +862,8 @@ app.post('/api/verify-license', (req, res) => {
                 }
             });
         } else {
-            res.json({ success: false, message: "Invalid, Blocked or Expired License Key!" });
+            // ලයිසන් එක වැරදි නම් හෝ status එක active නැත්නම්
+            res.json({ success: false, message: "වලංගු නොවන, අත්හිටුවන ලද හෝ කල් ඉකුත් වූ ලයිසන් එකකි." });
         }
     });
 });
@@ -878,50 +879,76 @@ app.post('/api/setup-branch', (req, res) => {
         address, 
         botToken, 
         chatId,
-        hwid // Frontend එකෙන් එවන HWID එක මෙතනට ගන්නවා
+        hwid 
     } = req.body;
 
     console.log("🛠️ Setup attempt for license:", licenseKey, "on Branch:", branchName);
 
-    // 1. ලයිසන් එකට අදාළ userId එක හොයාගන්නවා
-    db.query('SELECT userId FROM licenses WHERE licenseKey = ?', [licenseKey], (err, results) => {
+    // 1. මුලින්ම බලනවා මේ HWID එකට සහ මේ Branch Name එකට දැනටමත් Record එකක් තියෙනවද කියලා
+    const checkSql = `SELECT id FROM branches WHERE hwid = ? AND branch_name = ? AND licenseKey = ?`;
+    
+    db.query(checkSql, [hwid, branchName, licenseKey], (err, results) => {
         if (err) {
-            console.error("❌ Database Error (Lookup):", err);
-            return res.status(500).json({ success: false, message: "Database lookup error" });
+            console.error("❌ Database Error (Check):", err);
+            return res.status(500).json({ success: false, message: "Database check error" });
         }
 
-        if (results.length === 0) {
-            console.warn("⚠️ License Not Found:", licenseKey);
-            return res.status(404).json({ success: false, message: "මෙම ලයිසන් එක පද්ධතියේ නැත." });
-        }
+        if (results.length > 0) {
+            // ✅ දැනටමත් තියෙනවා නම්: UPDATE කරනවා (අලුත් row එකක් හැදෙන්නෙ නැහැ)
+            const branchId = results[0].id;
+            const updateSql = `UPDATE branches SET 
+                business_name = ?, address = ?, phone = ?, telegram_bot_token = ?, telegram_chat_id = ? 
+                WHERE id = ?`;
 
-        const userId = results[0].userId;
+            const updateValues = [businessName, address, phone, botToken, chatId, branchId];
 
-        // 2. Branch එක Insert කිරීම (hwid එකත් සමඟ)
-        const insertSql = `INSERT INTO branches 
-            (userId, licenseKey, business_name, branch_name, hwid, address, phone, telegram_bot_token, telegram_chat_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-        const values = [userId, licenseKey, businessName, branchName, hwid, address, phone, botToken, chatId];
-
-        db.query(insertSql, values, (insErr, result) => {
-            if (insErr) {
-                console.error("❌ SQL Error (Insert):", insErr.message);
-                return res.status(500).json({ success: false, message: "Branch setup failed: " + insErr.message });
-            }
-
-            // 3. ලයිසන් එකේ currentActivations ප්‍රමාණය 1 කින් වැඩි කිරීම
-            db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey], (updErr) => {
-                if (updErr) console.error("❌ Could not update activation count:", updErr);
-                
-                console.log("✅ Setup Success for:", businessName);
-                res.json({ 
+            db.query(updateSql, updateValues, (updErr) => {
+                if (updErr) {
+                    console.error("❌ SQL Error (Update):", updErr.message);
+                    return res.status(500).json({ success: false, message: "Branch update failed" });
+                }
+                console.log("♻️ Branch Updated for HWID:", hwid);
+                return res.json({ 
                     success: true, 
-                    message: "System activated and branch setup complete!", 
-                    branchId: result.insertId 
+                    message: "Branch configuration updated successfully!", 
+                    branchId: branchId 
                 });
             });
-        });
+
+        } else {
+            // 🆕 අලුත් එකක් නම් (වෙන PC එකක් හෝ අලුත් බ්‍රාන්ච් එකක්): INSERT කරනවා
+            
+            //userId එක හොයාගන්නවා
+            db.query('SELECT userId FROM licenses WHERE licenseKey = ?', [licenseKey], (lErr, lRes) => {
+                if (lErr || lRes.length === 0) {
+                    return res.status(404).json({ success: false, message: "License lookup failed" });
+                }
+
+                const userId = lRes[0].userId;
+                const insertSql = `INSERT INTO branches 
+                    (userId, licenseKey, business_name, branch_name, hwid, address, phone, telegram_bot_token, telegram_chat_id) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+                const insertValues = [userId, licenseKey, businessName, branchName, hwid, address, phone, botToken, chatId];
+
+                db.query(insertSql, insertValues, (insErr, result) => {
+                    if (insErr) {
+                        console.error("❌ SQL Error (Insert):", insErr.message);
+                        return res.status(500).json({ success: false, message: "Branch setup failed" });
+                    }
+
+                    // අලුත් Activation එකක් නිසා count එක 1කින් වැඩි කරනවා
+                    db.query('UPDATE licenses SET currentActivations = currentActivations + 1 WHERE licenseKey = ?', [licenseKey]);
+
+                    console.log("✅ New Branch Setup Success for:", businessName);
+                    res.json({ 
+                        success: true, 
+                        message: "New system activated and branch setup complete!", 
+                        branchId: result.insertId 
+                    });
+                });
+            });
+        }
     });
 });
 // --- POS VALIDATION & SYNC API ---
