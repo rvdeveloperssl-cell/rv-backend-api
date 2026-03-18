@@ -1300,5 +1300,20 @@ app.get('/api/pos/get-categories/:branchId', (req, res) => {
     });
 });
 
+// --- 📦 Inventory API: Delete Item ---
+app.post('/api/pos/delete-inventory', (req, res) => {
+    const { branchId, barcode } = req.body;
+
+    const sql = `DELETE FROM inventory WHERE branch_id = ? AND barcode = ?`;
+    
+    db.query(sql, [branchId, barcode], (err, result) => {
+        if (err) {
+            console.error("❌ Delete Error:", err);
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+        res.json({ success: true, message: "Item Deleted Successfully!" });
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
