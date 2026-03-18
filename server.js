@@ -1179,22 +1179,21 @@ const logoUpload = multer({ storage: logoStorage });
 
 // --- API Endpoint: Logo සහ Settings Update කිරීම ---
 app.post('/api/pos/update-settings', logoUpload.single('logo'), (req, res) => {
-    const { branchId, billFooter, currency, licenseKey } = req.body;
+    const { branchId, billFooter, currency } = req.body;
     let logoUrl = req.body.existingLogoUrl || null;
 
     if (req.file) {
-        // සර්වර් එකේ පින්තූරය තියෙන ලින්ක් එක
         logoUrl = `https://api.rvdevelopers.lk/uploads/logos/${req.file.filename}`;
     }
 
-    // Database එකට සේව් කිරීම (Insert or Update)
+    // මෙතන COALESCE පාවිච්චි කළේ අලුත් අගයක් ආවේ නැත්නම් පරණ අගයම තියාගන්න (Data නැති වෙන්නේ නෑ)
     const sql = `
         INSERT INTO settings (branch_id, logo_url, bill_footer, currency) 
         VALUES (?, ?, ?, ?) 
         ON DUPLICATE KEY UPDATE 
-        logo_url = VALUES(logo_url), 
-        bill_footer = VALUES(bill_footer), 
-        currency = VALUES(currency)`;
+        logo_url = IFNULL(VALUES(logo_url), logo_url), 
+        bill_footer = IFNULL(VALUES(bill_footer), bill_footer), 
+        currency = IFNULL(VALUES(currency), currency)`;
 
     db.query(sql, [branchId, logoUrl, billFooter, currency], (err, result) => {
         if (err) {
@@ -1203,7 +1202,7 @@ app.post('/api/pos/update-settings', logoUpload.single('logo'), (req, res) => {
         }
         res.json({ 
             success: true, 
-            logoUrl: logoUrl, 
+            logoUrl: logoUrl, // අලුත් URL එකත් එක්කම Response එක යවනවා
             message: "Settings Updated Successfully!" 
         });
     });
