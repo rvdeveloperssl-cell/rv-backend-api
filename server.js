@@ -1327,6 +1327,7 @@ app.get('/api/pos/get-sales/:branchId', (req, res) => {
             bill_id, 
             cashier_name, 
             items_summary, 
+            items_json, 
             customer_phone, 
             payment_method, 
             sub_total, 
