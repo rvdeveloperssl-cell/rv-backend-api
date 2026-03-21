@@ -1321,6 +1321,7 @@ app.post('/api/pos/delete-inventory', (req, res) => {
 app.get('/api/pos/get-sales/:branchId', (req, res) => {
     const branchId = req.params.branchId;
 
+    // MySQL Query එක - සියලුම අවශ්‍ය දත්ත (items_json ඇතුළුව) ලබාගන්නවා
     const query = `
         SELECT 
             bill_id, 
@@ -1344,25 +1345,29 @@ app.get('/api/pos/get-sales/:branchId', (req, res) => {
             return res.status(500).json({ success: false, message: "Internal Server Error" });
         }
 
-        // දත්ත ටික Frontend එකට යවන්න කලින් පොඩි පිරිසිදු කිරීමක් කරමු
+        // දත්ත ටික Frontend එකට යවන්න කලින් පිරිසිදු කරමු (Formatting)
         const formattedData = results.map(sale => {
             let parsedItems = [];
-            try {
-                // items_json එක String එකක් නම් විතරක් Parse කරනවා
-                parsedItems = typeof sale.items_json === 'string' ? JSON.parse(sale.items_json) : sale.items_json;
-            } catch (e) {
-                console.error("Error parsing items_json for bill:", sale.bill_id);
-                parsedItems = [];
+            
+            // 🟢 items_json එක පරීක්ෂා කර Array එකක් බවට පත් කිරීම
+            if (sale.items_json) {
+                try {
+                    parsedItems = typeof sale.items_json === 'string' ? JSON.parse(sale.items_json) : sale.items_json;
+                } catch (e) {
+                    console.error("❌ JSON Parse Error for bill:", sale.bill_id, e);
+                    parsedItems = []; // Error එකක් ආවොත් හිස් array එකක් යවනවා
+                }
             }
 
             return {
                 ...sale,
-                items_json: parsedItems, // දැන් මේක හැමතිස්සෙම Array එකක් විදිහට යනවා
-                // බිල් එකේ දවස සහ වෙලාව පැහැදිලිව යවමු
-                formatted_date: new Date(sale.created_at).toLocaleString()
+                items_json: parsedItems, // දැන් මේක හැමතිස්සෙම JSON Array එකක් විදිහට යනවා
+                // කියවන්න පුළුවන් වෙලාවක් සහ දිනයක් එකතු කිරීම
+                formatted_date: sale.created_at ? new Date(sale.created_at).toLocaleString('en-GB') : ''
             };
         });
 
+        // අවසාන දත්ත ටික JSON response එකක් ලෙස යැවීම
         res.json({
             success: true,
             data: formattedData
@@ -1370,13 +1375,14 @@ app.get('/api/pos/get-sales/:branchId', (req, res) => {
     });
 });
 
-// 2. අලුත් Sale එකක් Save කිරීමේ API එක (මෙයත් අවශ්‍ය වෙයි)
+// 2. අලුත් Sale එකක් Save කිරීමේ API එක
 app.post('/api/pos/save-sale', (req, res) => {
     const { 
         branch_id, 
         bill_id, 
         cashier_name, 
         items_summary, 
+        items_json, // 🟢 අලුතෙන් එකතු කළා
         customer_phone, 
         payment_method, 
         sub_total, 
@@ -1386,11 +1392,23 @@ app.post('/api/pos/save-sale', (req, res) => {
 
     const query = `
         INSERT INTO sales_history 
-        (branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        (branch_id, bill_id, cashier_name, items_summary, items_json, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `;
 
-    const values = [branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total];
+    // 🟢 values array එකටත් items_json එකතු කළා
+    const values = [
+        branch_id, 
+        bill_id, 
+        cashier_name, 
+        items_summary, 
+        items_json, 
+        customer_phone, 
+        payment_method, 
+        sub_total, 
+        discount_total, 
+        net_total
+    ];
 
     db.query(query, values, (err, result) => {
         if (err) {
@@ -1404,16 +1422,32 @@ app.post('/api/pos/save-sale', (req, res) => {
 app.post('/api/pos/complete-sale', (req, res) => {
     const s = req.body;
     const branchId = s.branchId;
-    const items = JSON.parse(s.items_json); // Frontend එකෙන් එවන Cart Array එක
+    
+    // Frontend එකෙන් එවන items_json එක (String එකක් නම් parse කරගන්නවා)
+    let items = [];
+    try {
+        items = typeof s.items_json === 'string' ? JSON.parse(s.items_json) : s.items_json;
+    } catch (e) {
+        console.error("❌ JSON Parse Error:", e);
+        return res.status(400).json({ success: false, message: "Invalid items data" });
+    }
 
-    // 1. Sales History එකට බිල ඇතුළත් කිරීම
+    // 1. Sales History එකට බිල ඇතුළත් කිරීම (අලුත් items_json column එකත් සමඟ)
     const saleQuery = `INSERT INTO sales_history 
-    (branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+    (branch_id, bill_id, cashier_name, items_summary, items_json, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const saleValues = [
-        branchId, s.bill_id, s.cashier_name, s.items_summary, 
-        s.customer_phone, s.payment_method, s.sub_total, s.discount_total, s.net_total
+        branchId, 
+        s.bill_id, 
+        s.cashier_name, 
+        s.items_summary, 
+        s.items_json, // 🟢 සම්පූර්ණ කාර්ට් එකම JSON එකක් විදිහට සේව් වෙනවා
+        s.customer_phone, 
+        s.payment_method, 
+        s.sub_total, 
+        s.discount_total, 
+        s.net_total
     ];
 
     db.query(saleQuery, saleValues, (err, result) => {
@@ -1422,12 +1456,16 @@ app.post('/api/pos/complete-sale', (req, res) => {
             return res.status(500).json({ success: false, message: "Error saving sale" });
         }
 
-        // 2. භාණ්ඩ එකින් එක loop කර Stock එක Update කිරීම
+        // 2. භාණ්ඩ එකින් එක loop කර Stock එක Update කිරීම (ඔයාගේ මුල් ලොජික් එකමයි)
         let updateErrors = 0;
         let completedUpdates = 0;
 
+        if (!items || items.length === 0) {
+            return res.json({ success: true, message: "Sale saved, but no items to update stock." });
+        }
+
         items.forEach(item => {
-            // Return එකක් නම් stock එක එකතු කරනවා, නැත්නම් අඩු කරනවා
+            // Return එකක් නම් stock එක එකතු කරනවා (+), නැත්නම් අඩු කරනවා (-)
             const qtyChange = item.isExchange ? `+ ${Math.abs(item.qty)}` : `- ${Math.abs(item.qty)}`;
             
             const updateStockQuery = `
