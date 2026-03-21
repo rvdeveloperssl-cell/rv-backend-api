@@ -1493,5 +1493,36 @@ app.post('/api/pos/complete-sale', (req, res) => {
     });
 });
 
+// 📦 1. Backup Record එකක් Save කිරීම
+app.post('/api/pos/save-backup-log', (req, res) => {
+    const { branch_id, backup_date, backup_time, reference_id, status } = req.body;
+    
+    const query = `INSERT INTO backup_logs (branch_id, backup_date, backup_time, reference_id, status) VALUES (?, ?, ?, ?, ?)`;
+    const values = [branch_id, backup_date, backup_time, reference_id, status];
+
+    db.query(query, values, (err, result) => {
+        if (err) {
+            console.error("❌ SQL Error (Backup Log):", err);
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+        res.json({ success: true, message: "Backup Logged!" });
+    });
+});
+
+// 📂 2. Backup History එක ලබාගැනීම
+app.get('/api/pos/get-backups/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+    const query = `SELECT * FROM backup_logs WHERE branch_id = ? ORDER BY id DESC LIMIT 20`;
+
+    db.query(query, [branchId], (err, results) => {
+        if (err) {
+            console.error("❌ SQL Error (Get Backups):", err);
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+        res.json({ success: true, data: results });
+    });
+});
+
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
