@@ -1385,27 +1385,55 @@ app.post('/api/pos/save-sale', (req, res) => {
 
 app.post('/api/pos/complete-sale', (req, res) => {
     const s = req.body;
+    const branchId = s.branchId;
+    const items = JSON.parse(s.items_json); // Frontend එකෙන් එවන Cart Array එක
 
-    // 1. Sales History එකට දත්ත ඇතුළත් කිරීමේ Query එක
+    // 1. Sales History එකට බිල ඇතුළත් කිරීම
     const saleQuery = `INSERT INTO sales_history 
     (branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const saleValues = [
-        s.branchId, s.bill_id, s.cashier_name, s.items_summary, 
+        branchId, s.bill_id, s.cashier_name, s.items_summary, 
         s.customer_phone, s.payment_method, s.sub_total, s.discount_total, s.net_total
     ];
 
     db.query(saleQuery, saleValues, (err, result) => {
         if (err) {
-            console.error("❌ SQL Error:", err);
-            return res.status(500).json({ success: false, message: err.message });
+            console.error("❌ SQL Error (Sales):", err);
+            return res.status(500).json({ success: false, message: "Error saving sale" });
         }
 
-        // 2. මෙතනදී ඔබට අවශ්‍ය නම් වෙනම Table එකක Inventory Update එකක්ද සිදු කළ හැක.
-        // දැනට පද්ධතියේ වේගය සඳහා මුළු Inventory එකම JSON ලෙස හෝ වෙනම Loop එකකින් update කළ හැක.
+        // 2. භාණ්ඩ එකින් එක loop කර Stock එක Update කිරීම
+        let updateErrors = 0;
+        let completedUpdates = 0;
 
-        res.json({ success: true, message: "Sale recorded successfully" });
+        items.forEach(item => {
+            // Return එකක් නම් stock එක එකතු කරනවා, නැත්නම් අඩු කරනවා
+            const qtyChange = item.isExchange ? `+ ${Math.abs(item.qty)}` : `- ${Math.abs(item.qty)}`;
+            
+            const updateStockQuery = `
+                UPDATE inventory 
+                SET stock_qty = stock_qty ${qtyChange} 
+                WHERE barcode = ? AND branch_id = ?`;
+
+            db.query(updateStockQuery, [item.barcode, branchId], (uErr, uResult) => {
+                completedUpdates++;
+                if (uErr) {
+                    console.error(`❌ Stock Update Error (Barcode: ${item.barcode}):`, uErr);
+                    updateErrors++;
+                }
+
+                // සියලුම අයිටම් update වී අවසන් නම් පමණක් Response එක යවමු
+                if (completedUpdates === items.length) {
+                    if (updateErrors > 0) {
+                        res.json({ success: true, message: "Sale saved, but some stock levels failed to update." });
+                    } else {
+                        res.json({ success: true, message: "Sale completed & Inventory updated!" });
+                    }
+                }
+            });
+        });
     });
 });
 
