@@ -1321,7 +1321,6 @@ app.post('/api/pos/delete-inventory', (req, res) => {
 app.get('/api/pos/get-sales/:branchId', (req, res) => {
     const branchId = req.params.branchId;
 
-    // MySQL Query එක - පරණ ඒවා මුලින් එන විදිහට (DESC) අරගන්නවා
     const query = `
         SELECT 
             bill_id, 
@@ -1345,10 +1344,28 @@ app.get('/api/pos/get-sales/:branchId', (req, res) => {
             return res.status(500).json({ success: false, message: "Internal Server Error" });
         }
 
-        // Frontend එක බලාපොරොත්තු වන විදිහට දත්ත යැවීම
+        // දත්ත ටික Frontend එකට යවන්න කලින් පොඩි පිරිසිදු කිරීමක් කරමු
+        const formattedData = results.map(sale => {
+            let parsedItems = [];
+            try {
+                // items_json එක String එකක් නම් විතරක් Parse කරනවා
+                parsedItems = typeof sale.items_json === 'string' ? JSON.parse(sale.items_json) : sale.items_json;
+            } catch (e) {
+                console.error("Error parsing items_json for bill:", sale.bill_id);
+                parsedItems = [];
+            }
+
+            return {
+                ...sale,
+                items_json: parsedItems, // දැන් මේක හැමතිස්සෙම Array එකක් විදිහට යනවා
+                // බිල් එකේ දවස සහ වෙලාව පැහැදිලිව යවමු
+                formatted_date: new Date(sale.created_at).toLocaleString()
+            };
+        });
+
         res.json({
             success: true,
-            data: results
+            data: formattedData
         });
     });
 });
