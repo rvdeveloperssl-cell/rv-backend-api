@@ -1316,5 +1316,73 @@ app.post('/api/pos/delete-inventory', (req, res) => {
     });
 });
 
+
+// 1. Sales History එක ලබාගැනීමේ API එක
+app.get('/api/pos/get-sales/:branchId', (req, res) => {
+    const branchId = req.params.branchId;
+
+    // MySQL Query එක - පරණ ඒවා මුලින් එන විදිහට (DESC) අරගන්නවා
+    const query = `
+        SELECT 
+            bill_id, 
+            cashier_name, 
+            items_summary, 
+            customer_phone, 
+            payment_method, 
+            sub_total, 
+            discount_total, 
+            net_total, 
+            created_at 
+        FROM sales_history 
+        WHERE branch_id = ? 
+        ORDER BY created_at DESC
+    `;
+
+    db.query(query, [branchId], (err, results) => {
+        if (err) {
+            console.error("❌ Database Error:", err);
+            return res.status(500).json({ success: false, message: "Internal Server Error" });
+        }
+
+        // Frontend එක බලාපොරොත්තු වන විදිහට දත්ත යැවීම
+        res.json({
+            success: true,
+            data: results
+        });
+    });
+});
+
+// 2. අලුත් Sale එකක් Save කිරීමේ API එක (මෙයත් අවශ්‍ය වෙයි)
+app.post('/api/pos/save-sale', (req, res) => {
+    const { 
+        branch_id, 
+        bill_id, 
+        cashier_name, 
+        items_summary, 
+        customer_phone, 
+        payment_method, 
+        sub_total, 
+        discount_total, 
+        net_total 
+    } = req.body;
+
+    const query = `
+        INSERT INTO sales_history 
+        (branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    const values = [branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total];
+
+    db.query(query, values, (err, result) => {
+        if (err) {
+            console.error("❌ Insert Error:", err);
+            return res.status(500).json({ success: false, message: "Failed to save sale" });
+        }
+        res.json({ success: true, message: "Sale saved successfully" });
+    });
+});
+
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
