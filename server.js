@@ -1383,6 +1383,31 @@ app.post('/api/pos/save-sale', (req, res) => {
     });
 });
 
+app.post('/api/pos/complete-sale', (req, res) => {
+    const s = req.body;
+
+    // 1. Sales History එකට දත්ත ඇතුළත් කිරීමේ Query එක
+    const saleQuery = `INSERT INTO sales_history 
+    (branch_id, bill_id, cashier_name, items_summary, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+
+    const saleValues = [
+        s.branchId, s.bill_id, s.cashier_name, s.items_summary, 
+        s.customer_phone, s.payment_method, s.sub_total, s.discount_total, s.net_total
+    ];
+
+    db.query(saleQuery, saleValues, (err, result) => {
+        if (err) {
+            console.error("❌ SQL Error:", err);
+            return res.status(500).json({ success: false, message: err.message });
+        }
+
+        // 2. මෙතනදී ඔබට අවශ්‍ය නම් වෙනම Table එකක Inventory Update එකක්ද සිදු කළ හැක.
+        // දැනට පද්ධතියේ වේගය සඳහා මුළු Inventory එකම JSON ලෙස හෝ වෙනම Loop එකකින් update කළ හැක.
+
+        res.json({ success: true, message: "Sale recorded successfully" });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
