@@ -1523,6 +1523,70 @@ app.get('/api/pos/get-backups/:branchId', (req, res) => {
     });
 });
 
+// Frontend එකෙන් branch_id එක එවපුවම හැම ටේබල් එකකම දත්ත එකතු කරලා යවනවා
+app.get('/api/pos/get-full-backup-data', (req, res) => {
+    const { branch_id } = req.query;
+
+    if (!branch_id) {
+        return res.status(400).json({ success: false, message: "Branch ID is required" });
+    }
+
+    // හැම Table එකකටම අදාළ Queries ටික
+    const queries = {
+        inventory: "SELECT * FROM inventory WHERE branch_id = ?",
+        sales: "SELECT * FROM sales_history WHERE branch_id = ?",
+        attendance: "SELECT * FROM attendance WHERE branch_id = ?",
+        staff: "SELECT * FROM staff WHERE branch_id = ?",
+        logs: "SELECT * FROM system_logs WHERE branch_id = ?",
+        categories: "SELECT * FROM categories WHERE branch_id = ?",
+        settings: "SELECT * FROM settings WHERE branch_id = ?"
+    };
+
+    // Results ටික එකතු කරගන්න object එකක්
+    let backupData = {};
+
+    // එකින් එක Query එක Run කරනවා (Callback nesting වලට වඩා ලේසි වෙන්න මෙහෙම කළා)
+    db.query(queries.inventory, [branch_id], (err, invRes) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        backupData.inventory = invRes;
+
+        db.query(queries.sales, [branch_id], (err, saleRes) => {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            backupData.sales = saleRes;
+
+            db.query(queries.attendance, [branch_id], (err, attRes) => {
+                if (err) return res.status(500).json({ success: false, error: err.message });
+                backupData.attendance = attRes;
+
+                db.query(queries.staff, [branch_id], (err, staffRes) => {
+                    if (err) return res.status(500).json({ success: false, error: err.message });
+                    backupData.staff = staffRes;
+
+                    db.query(queries.logs, [branch_id], (err, logRes) => {
+                        if (err) return res.status(500).json(err);
+                        backupData.logs = logRes;
+
+                        db.query(queries.categories, [branch_id], (err, catRes) => {
+                            if (err) return res.status(500).json(err);
+                            backupData.categories = catRes;
+
+                            db.query(queries.settings, [branch_id], (err, setRes) => {
+                                if (err) return res.status(500).json(err);
+                                backupData.settings = setRes;
+
+                                // සියලුම දත්ත ලැබුණු පසු ප්‍රතිචාරය යැවීම
+                                res.json({
+                                    success: true,
+                                    data: backupData
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
