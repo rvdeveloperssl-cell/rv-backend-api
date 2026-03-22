@@ -1665,5 +1665,39 @@ app.post('/api/pos/restore-full-backup', async (req, res) => {
     }
 });
 
+// Barcode Login API
+app.post('/api/pos/barcode-login', (req, res) => {
+    const { cardId, branchId } = req.body;
+
+    // Card ID එක සහ Branch ID එක අනුව යූසර්ව සොයන Query එක
+    const sql = `SELECT * FROM staff WHERE card_id = ? AND branch_id = ? LIMIT 1`;
+
+    db.query(sql, [cardId, branchId], (err, results) => {
+        if (err) {
+            console.error("❌ SQL Error:", err);
+            return res.status(500).json({ success: false, message: "Database Error" });
+        }
+
+        if (results.length > 0) {
+            const user = results[0];
+            // Security සඳහා password එක response එකෙන් අයින් කරනවා
+            delete user.password; 
+            
+            res.json({ 
+                success: true, 
+                user: {
+                    id: user.id,
+                    name: user.full_name,
+                    user: user.username,
+                    role: user.role,
+                    cardID: user.card_id
+                }
+            });
+        } else {
+            res.json({ success: false, message: "Invalid Card ID" });
+        }
+    });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
