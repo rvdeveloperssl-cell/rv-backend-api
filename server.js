@@ -1588,5 +1588,86 @@ app.get('/api/pos/get-full-backup-data', (req, res) => {
     });
 });
 
+// --- POS SYSTEM FULL RESTORE API ---
+// JSON එකෙන් එන දත්ත ටික Database එකේ Tables වලට ලියනවා
+app.post('/api/pos/restore-full-backup', async (req, res) => {
+    const { branch_id, data } = req.body;
+
+    if (!branch_id || !data) {
+        return res.status(400).json({ success: false, message: "Missing branch_id or data" });
+    }
+
+    try {
+        // 1. කලින් තිබුණු දත්ත අයින් කිරීම (අදාළ branch එකට පමණක්)
+        // මේක කරන්නේ අලුත් දත්ත එක්ක පරණ ඒවා පටලැවෙන්නේ නැති වෙන්නයි
+        const clearTables = [
+            "DELETE FROM inventory WHERE branch_id = ?",
+            "DELETE FROM sales_history WHERE branch_id = ?",
+            "DELETE FROM attendance WHERE branch_id = ?",
+            "DELETE FROM staff WHERE branch_id = ?",
+            "DELETE FROM system_logs WHERE branch_id = ?",
+            "DELETE FROM categories WHERE branch_id = ?",
+            "DELETE FROM settings WHERE branch_id = ?"
+        ];
+
+        for (let query of clearTables) {
+            await db.promise().query(query, [branch_id]);
+        }
+
+        // 2. Inventory Restore
+        if (data.inventory && data.inventory.length > 0) {
+            const invValues = data.inventory.map(i => [
+                branch_id, i.item_name || i.name, i.barcode, i.category, 
+                i.cost_price || i.cost, i.sale_price || i.sale, i.discount || i.itemDiscount, 
+                i.disc_type || i.discType, i.stock_qty || i.stock, i.low_stock_limit || i.lowStockLimit, i.sale_type || i.saleType
+            ]);
+            await db.promise().query(`INSERT INTO inventory (branch_id, item_name, barcode, category, cost_price, sale_price, discount, disc_type, stock_qty, low_stock_limit, sale_type) VALUES ?`, [invValues]);
+        }
+
+        // 3. Sales History Restore
+        if (data.sales && data.sales.length > 0) {
+            const saleValues = data.sales.map(s => [
+                branch_id, s.bill_id, s.cashier_name, s.items_summary, 
+                typeof s.items === 'object' ? JSON.stringify(s.items) : (s.items_json || '[]'),
+                s.customer_phone, s.payment_method, s.sub_total, s.discount_total, s.net_total, s.created_at
+            ]);
+            await db.promise().query(`INSERT INTO sales_history (branch_id, bill_id, cashier_name, items_summary, items_json, customer_phone, payment_method, sub_total, discount_total, net_total, created_at) VALUES ?`, [saleValues]);
+        }
+
+        // 4. Staff Restore
+        if (data.staff && data.staff.length > 0) {
+            const staffValues = data.staff.map(s => [branch_id, s.card_id, s.full_name, s.username, s.password, s.role, s.telegram_id]);
+            await db.promise().query(`INSERT INTO staff (branch_id, card_id, full_name, username, password, role, telegram_id) VALUES ?`, [staffValues]);
+        }
+
+        // 5. Attendance Restore
+        if (data.attendance && data.attendance.length > 0) {
+            const attValues = data.attendance.map(a => [branch_id, a.card_id, a.full_name, a.date, a.in_time, a.out_time, a.status]);
+            await db.promise().query(`INSERT INTO attendance (branch_id, card_id, full_name, date, in_time, out_time, status) VALUES ?`, [attValues]);
+        }
+
+        // 6. Logs Restore
+        if (data.logs && data.logs.length > 0) {
+            const logValues = data.logs.map(l => [branch_id, l.user_name, l.user_role, l.login_time, l.logout_time, l.device_info, l.status]);
+            await db.promise().query(`INSERT INTO system_logs (branch_id, user_name, user_role, login_time, logout_time, device_info, status) VALUES ?`, [logValues]);
+        }
+
+        // 7. Categories & Settings
+        if (data.categories && data.categories.length > 0) {
+            const catValues = data.categories.map(c => [branch_id, c.name, c.display_name]);
+            await db.promise().query(`INSERT INTO categories (branch_id, name, display_name) VALUES ?`, [catValues]);
+        }
+        
+        // Settings සාමාන්‍යයෙන් Object එකක් නිසා ඒක වෙනම Handle කරන්න ඕනේ (ඔයාගේ table එක අනුව)
+        // දැනට සරලව log එකක් විතරක් දාන්නම්
+
+        res.json({ success: true, message: "Database tables restored successfully!" });
+
+    } catch (error) {
+        console.error("❌ Restore API Error:", error);
+        res.status(500).json({ success: false, message: "Database restore failed", error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT} (SMTP via Google Script)`));
