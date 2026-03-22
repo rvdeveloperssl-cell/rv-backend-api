@@ -1178,15 +1178,11 @@ const logoStorage = multer.diskStorage({
 const logoUpload = multer({ storage: logoStorage });
 
 // --- API Endpoint: Logo සහ Settings Update කිරීම ---
-app.post('/api/pos/update-settings', logoUpload.single('logo'), (req, res) => {
-    const { branchId, billFooter, currency } = req.body;
-    let logoUrl = req.body.existingLogoUrl || null;
+app.post('/api/pos/update-settings', (req, res) => {
+    // දැන් අපි FormData වෙනුවට JSON විදිහට Base64 එක යවමු (ලේසි වෙන්න)
+    const { branchId, billFooter, currency, logoBase64 } = req.body;
 
-    if (req.file) {
-        logoUrl = `https://api.rvdevelopers.lk/uploads/logos/${req.file.filename}`;
-    }
-
-    // මෙතන COALESCE පාවිච්චි කළේ අලුත් අගයක් ආවේ නැත්නම් පරණ අගයම තියාගන්න (Data නැති වෙන්නේ නෑ)
+    // මෙතන logo_url එකටම අපි Base64 string එක දානවා (Database එකේ TEXT හෝ LONGTEXT field එකක් වෙන්න ඕනේ)
     const sql = `
         INSERT INTO settings (branch_id, logo_url, bill_footer, currency) 
         VALUES (?, ?, ?, ?) 
@@ -1195,14 +1191,14 @@ app.post('/api/pos/update-settings', logoUpload.single('logo'), (req, res) => {
         bill_footer = IFNULL(VALUES(bill_footer), bill_footer), 
         currency = IFNULL(VALUES(currency), currency)`;
 
-    db.query(sql, [branchId, logoUrl, billFooter, currency], (err, result) => {
+    db.query(sql, [branchId, logoBase64, billFooter, currency], (err, result) => {
         if (err) {
             console.error("❌ SQL Error (Settings):", err);
             return res.status(500).json({ success: false, message: "Settings Update Failed" });
         }
         res.json({ 
             success: true, 
-            logoUrl: logoUrl, // අලුත් URL එකත් එක්කම Response එක යවනවා
+            logoUrl: logoBase64, // මෙතන දැන් URL එක වෙනුවට Base64 එකම ආපහු යවනවා
             message: "Settings Updated Successfully!" 
         });
     });
