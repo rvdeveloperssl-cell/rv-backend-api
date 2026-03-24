@@ -1700,146 +1700,72 @@ app.post('/api/pos/barcode-login', (req, res) => {
 });
 
 
-// ============================================================================
-// 📱 MOBILE APP API ROUTES (READ ONLY / VIEW ONLY)
-// ============================================================================
-// මේවා Mobile App එකෙන් දත්ත බැලීමට පමණක් භාවිතා වේ.
+// ==========================================
+// MOBILE APP SPECIFIC API (READ-ONLY)
+// ==========================================
 
-// 1. Mobile App: License Key Verification
-// (branches ටේබල් එක හරහා පරීක්ෂා කර අදාළ ශාඛා ලැයිස්තුව යවයි)
+// 1. License එකෙන් බ්‍රාන්ච් ලිස්ට් එක ගැනීම (Login එක වෙනුවට)
 app.post('/api/mobile/verify-license', (req, res) => {
     const { license_key } = req.body;
-
-    if (!license_key) {
-        return res.status(400).json({ success: false, message: "License key is required." });
-    }
-
-    const sql = `SELECT id, branch_name, business_name, address, phone 
-                 FROM branches 
-                 WHERE licenseKey = ?`;
-
+    const sql = `SELECT id, branch_name, business_name, address FROM branches WHERE licenseKey = ?`;
+    
     db.query(sql, [license_key], (err, results) => {
-        if (err) {
-            console.error("❌ Mobile API Error (verify-license):", err);
-            return res.status(500).json({ success: false, message: "Database error." });
-        }
-
+        if (err) return res.status(500).json({ success: false, message: "Database Error" });
         if (results.length > 0) {
-            // Mobile app එක බලාපොරොත්තු වෙන 'data' array එක යවමු
             res.json({ success: true, data: results });
         } else {
-            res.json({ success: false, message: "Invalid license key or no branches found." });
+            res.json({ success: false, message: "වලංගු නොවන ලයිසන් කේතයකි." });
         }
     });
 });
 
-// 2. Mobile App: Staff Login
-app.post('/api/mobile/login', (req, res) => {
-    const { username, password, branchId } = req.body;
-
-    const sql = `SELECT id, full_name as name, username as user, role 
-                 FROM staff 
-                 WHERE username = ? AND password = ? AND branch_id = ?`;
-
-    db.query(sql, [username, password, branchId], (err, results) => {
-        if (err) {
-            console.error("❌ Mobile API Error (login):", err);
-            return res.status(500).json({ success: false, message: "Database error." });
-        }
-
-        if (results.length > 0) {
-            res.json({ success: true, user: results[0] });
-        } else {
-            res.status(401).json({ success: false, message: "Invalid credentials or branch mismatch." });
-        }
-    });
-});
-
-// 3. Mobile App: Get Inventory
+// 2. Inventory බැලීම
 app.get('/api/mobile/inventory/:branchId', (req, res) => {
-    const branchId = req.params.branchId;
-    const sql = `SELECT * FROM inventory WHERE branch_id = ?`;
+    const { branchId } = req.params;
+    const sql = `SELECT barcode, item_name, category, cost_price, sale_price, stock_qty, low_stock_limit FROM inventory WHERE branch_id = ?`;
     
     db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error." });
+        if (err) return res.status(500).json({ success: false });
         res.json({ success: true, data: results });
     });
 });
 
-// 4. Mobile App: Get Sales History
+// 3. Sales History බැලීම
 app.get('/api/mobile/sales/:branchId', (req, res) => {
-    const branchId = req.params.branchId;
-    const sql = `SELECT * FROM sales_history WHERE branch_id = ? ORDER BY created_at DESC LIMIT 100`;
+    const { branchId } = req.params;
+    const sql = `SELECT bill_id, cashier_name, net_total, created_at, items_summary FROM sales_history WHERE branch_id = ? ORDER BY created_at DESC LIMIT 50`;
     
     db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error." });
-        
-        const formattedData = results.map(sale => {
-            let parsedItems = [];
-            if (sale.items_json) {
-                try {
-                    parsedItems = typeof sale.items_json === 'string' ? JSON.parse(sale.items_json) : sale.items_json;
-                } catch (e) {
-                    parsedItems = [];
-                }
-            }
-            return { ...sale, items_json: parsedItems };
-        });
-
-        res.json({ success: true, data: formattedData });
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, data: results });
     });
 });
 
-// 5. Mobile App: Get Staff Members
-app.get('/api/mobile/staff/:branchId', (req, res) => {
-    const branchId = req.params.branchId;
-    const sql = `SELECT id, full_name, username, role, telegram_id, card_id FROM staff WHERE branch_id = ?`;
-    
-    db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error." });
-        res.json({ success: true, staff: results });
-    });
-});
-
-// 6. Mobile App: Get Categories
-app.get('/api/mobile/categories/:branchId', (req, res) => {
-    const branchId = req.params.branchId;
-    const sql = `SELECT category_name FROM categories WHERE branch_id = ?`;
-    
-    db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error." });
-        const catList = results.map(row => row.category_name);
-        res.json({ success: true, data: catList });
-    });
-});
-
-// 7. Mobile App: Get Dashboard Stats (Today's Data)
+// 4. Dashboard Stats (අද දවසේ විකුණුම්)
 app.get('/api/mobile/dashboard/stats/:branchId', (req, res) => {
-    const branchId = req.params.branchId;
-    
-    // මේක ටිකක් සංකීර්ණ query එකක්. අද දවසේ විකුණුම් එකතුව හොයනවා.
+    const { branchId } = req.params;
     const sql = `
         SELECT 
-            COUNT(id) as total_bills,
-            SUM(net_total) as today_sales,
-            SUM(discount_total) as today_discounts
+            SUM(net_total) as total_sales, 
+            COUNT(id) as total_orders,
+            (SELECT COUNT(id) FROM inventory WHERE branch_id = ? AND stock_qty <= low_stock_limit) as low_stock_count
         FROM sales_history 
-        WHERE branch_id = ? AND DATE(created_at) = CURDATE()
-    `;
+        WHERE branch_id = ? AND DATE(created_at) = CURDATE()`;
+    
+    db.query(sql, [branchId, branchId], (err, results) => {
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, data: results[0] });
+    });
+});
+
+// 5. Staff ලැයිස්තුව බැලීම
+app.get('/api/mobile/staff/:branchId', (req, res) => {
+    const { branchId } = req.params;
+    const sql = `SELECT id, full_name, role, username FROM staff WHERE branch_id = ?`;
     
     db.query(sql, [branchId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error." });
-        
-        const stats = results[0] || { total_bills: 0, today_sales: 0, today_discounts: 0 };
-        
-        res.json({ 
-            success: true, 
-            data: {
-                totalSales: stats.today_sales || 0,
-                totalOrders: stats.total_bills || 0,
-                // වෙනත් අවශ්‍ය දත්ත මෙතනට එකතු කරන්න පුළුවන්
-            }
-        });
+        if (err) return res.status(500).json({ success: false });
+        res.json({ success: true, staff: results });
     });
 });
 // ============================================================================
